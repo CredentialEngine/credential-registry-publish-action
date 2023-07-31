@@ -1,0 +1,30 @@
+{
+  "name": "credential-registry-publish-action",
+  "version": "0.1.0",
+  "description": "A GitHub Action that pulls CTDL JSON-LD-formatted data from configured source URLs and publishes it on behalf of an organization to the Credential Registry. ",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ottonomy/credential-registry-publish-action.git"
+  },
+  "keywords": [
+    "credential",
+    "engine",
+    "ctdl",
+    "credential",
+    "registry"
+  ],
+  "author": "Nate Otto, Skybridge Skills",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/ottonomy/credential-registry-publish-action/issues"
+  },
+  "homepage": "https://github.com/ottonomy/credential-registry-publish-action#readme",
+  "dependencies": {
+    "@actions/core": "^1.10.0",
+    "@actions/github": "^5.1.1"
+  }
+}
