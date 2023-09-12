@@ -1,0 +1,20 @@
+name: "Ingest Resources to the Credential Registry"
+description: "Scrape configured URLs for CTDL-formatted JSON-LD data and publish relevant resources to the Credential Registry under the specified API key and organization ID."
+runs:
+  using: "node16"
+  main: "dist/index.js"
+inputs:
+  urls:
+    description: "The URLs to scrape for CTDL-formatted JSON-LD data."
+    required: true
+    default: ""
+  registry-env:
+    description: "The environment to publish to. Must be one of 'sandbox', 'production', or 'staging'."
+    required: true
+    default: "sandbox"
+  organization-ctid:
+    description: "The organization CTID to publish resources under."
+    required: true
+  registry-api-key:
+    description: "The API key to use for publishing to the selected environment (SECRET)."
+    required: true

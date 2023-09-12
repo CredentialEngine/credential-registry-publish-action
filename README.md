@@ -8,8 +8,8 @@ A GitHub action that may be used to publish open data published in CTDL format t
 - [ ] Document expected node version `18` (current LTS version) in `.nvmrc` and Action configuration.
 - [ ] Use Vercel's `ncc` tool (with `--licenses` flag) to package up dependency modules into a single file for distribution.
 - [ ] Add `.prettierrc.json` etc. for code formatting.
-- [ ] Tune `.gitignore`
-- [ ] Create `/.action.yml` for GitHub Action metadata.
+- [x] Tune `.gitignore`
+- [x] Create `/.action.yml` for GitHub Action metadata.
 - [ ] Document inputs and environment secrets & variables for the action
 - [ ] Implementer can configure one or more URLs to be processed.
 - [ ] Implementer can configure an API key to be used for publishing.

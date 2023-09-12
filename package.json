@@ -26,9 +26,11 @@
   "homepage": "https://github.com/ottonomy/credential-registry-publish-action#readme",
   "dependencies": {
     "@actions/core": "^1.10.0",
-    "@actions/github": "^5.1.1"
+    "@actions/github": "^5.1.1",
+    "node-fetch-cache": "^3.1.3"
   },
   "devDependencies": {
+    "@types/node": "^20.6.0",
     "@vercel/ncc": "^0.38.0",
     "typescript": "^5.2.2"
   }
