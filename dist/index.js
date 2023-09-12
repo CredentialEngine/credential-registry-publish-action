@@ -2888,9 +2888,9 @@ var __awaiter = (undefined && undefined.__awaiter) || function (thisArg, _argume
 
 const run = () => __awaiter(void 0, void 0, void 0, function* () {
     const urls = _actions_core__WEBPACK_IMPORTED_MODULE_0__.getInput("urls");
-    const registryEnv = _actions_core__WEBPACK_IMPORTED_MODULE_0__.getInput("registry-environment");
+    const registryEnv = _actions_core__WEBPACK_IMPORTED_MODULE_0__.getInput("registry-env");
     const registryApiKey = _actions_core__WEBPACK_IMPORTED_MODULE_0__.getInput("registry-api-key");
-    const registryOrgCtid = _actions_core__WEBPACK_IMPORTED_MODULE_0__.getInput("registry-org-ctid");
+    const registryOrgCtid = _actions_core__WEBPACK_IMPORTED_MODULE_0__.getInput("organization-ctid");
     _actions_core__WEBPACK_IMPORTED_MODULE_0__.info("Launching Credential Registry Publish Action");
     _actions_core__WEBPACK_IMPORTED_MODULE_0__.info(`Starting with URLs: ${urls}`);
     _actions_core__WEBPACK_IMPORTED_MODULE_0__.info(`Selected ${registryEnv} environment. Publishing for org ${registryOrgCtid}.`);
