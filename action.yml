@@ -8,13 +8,13 @@ inputs:
     description: "The URLs to scrape for CTDL-formatted JSON-LD data."
     required: true
     default: ""
-  registry-env:
+  registry_env:
     description: "The environment to publish to. Must be one of 'sandbox', 'production', or 'staging'."
     required: true
     default: "sandbox"
-  organization-ctid:
+  organization_ctid:
     description: "The organization CTID to publish resources under."
     required: true
-  registry-api-key:
+  registry_api_key:
     description: "The API key to use for publishing to the selected environment (SECRET)."
     required: true
