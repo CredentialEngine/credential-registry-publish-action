@@ -23,3 +23,5 @@ A GitHub action that may be used to publish open data published in CTDL format t
 ## Documentation and notes
 
 This repository contains one GitHub Action using a NodeJS runtime. It roughly follows documentation at [GitHub](https://docs.github.com/en/actions/creating-actions/creating-a-javascript-action) except that it uses a TypeScript source.
+
+Some [documentation on using the Actions Toolkit in Typescript](https://github.com/actions/typescript-action), covering how to use test mocks.
