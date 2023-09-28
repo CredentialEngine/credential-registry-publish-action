@@ -3,20 +3,14 @@ import fetch from "node-fetch-cache";
 
 import { CredentialSubtypes } from "./credential";
 import { arrayOf } from "./utils";
+import {
+  RegistryEnvironment,
+  RegistryBaseUrls,
+  RegistryConfig,
+  DocumentMetadata,
+} from "./types";
 import { context } from "@actions/github";
-
-type RegistryEnvironment = "sandbox" | "staging" | "production";
-const RegistryBaseUrls: { [key in RegistryEnvironment]: string } = {
-  sandbox: "https://sandbox.credentialengineregistry.org",
-  staging: "https://staging.credentialengineregistry.org",
-  production: "https://credentialengineregistry.org",
-};
-interface DocumentMetadata {
-  isGraph: boolean;
-  errors: string[];
-  entityTypes: { [key: string]: string[] };
-  entitiesByType: { [key: string]: string[] };
-}
+import { publishLearningProgram } from "./learningProgram";
 
 export const validateGraph = (url: string, responseData: object): boolean => {
   // validate context matches CTDL expectation:
@@ -38,12 +32,12 @@ export const validateGraph = (url: string, responseData: object): boolean => {
     return false;
   }
 
-  if (!responseData["@graph"]) {
-    core.error(
-      `This tool only supports ingestion of CTDL data in @graph format at this time. No @graph found in document ${url}`
-    );
-    return false;
-  }
+  //   if (!responseData["@graph"]) {
+  //     core.error(
+  //       `This tool only supports ingestion of CTDL data in @graph format at this time. No @graph found in document ${url}`
+  //     );
+  //     return false;
+  //   }
 
   return true;
 };
@@ -59,6 +53,7 @@ export const indexDocuments = (documents: { [key: string]: any }) => {
   Object.keys(documents).forEach((url) => {
     const responseData = documents[url];
     let graph = [];
+    let ctidsById: { [key: string]: string } = {};
     let isGraph = false;
     if (validateGraph(url, responseData)) {
       isGraph = true;
@@ -83,6 +78,9 @@ export const indexDocuments = (documents: { [key: string]: any }) => {
       if (type) {
         const typeArray = arrayOf(type) as string[];
         entityTypes[entity["@id"]] = typeArray;
+        if (entity["ceterms:ctid"]) {
+          ctidsById[entity["@id"]] = entity["ceterms:ctid"];
+        }
         typeArray.forEach((et) => {
           // Register this entity @id in the appropriate entitiesByType
           if (!entitiesByType[et]) {
@@ -95,10 +93,12 @@ export const indexDocuments = (documents: { [key: string]: any }) => {
     });
 
     metadata[url] = {
+      url,
       isGraph: isGraph,
       errors: [],
       entityTypes,
       entitiesByType,
+      ctidsById,
     };
   });
 
@@ -138,6 +138,13 @@ export const run = async () => {
     );
     return;
   }
+
+  const registryConfig: RegistryConfig = {
+    registryEnv,
+    registryBaseUrl,
+    registryApiKey,
+    registryOrgCtid,
+  };
 
   // URLs are comma-separated, so split them into an array
   const urlsArray = urls.split(",");
@@ -184,17 +191,36 @@ export const run = async () => {
   );
 
   const { metadata, urlsForNode } = indexDocuments(documents);
+  core.info(JSON.stringify(metadata, null, 2));
 
   // For documents of supported types found in a graph, publish the document.
-  urlsArray.forEach((url) => {
-    const documentMetadata = metadata[url];
-    let nodes = [];
-    if (documentMetadata.isGraph) {
-      nodes = documents[url]["@graph"];
-    } else {
-      nodes = [documents[url]];
-    }
-  });
-
-  core.info("Done?");
+  const results = await Promise.all(
+    urlsArray.map(async (url) => {
+      const documentMetadata = metadata[url];
+      const thisDocument = documents[url];
+      if (documentMetadata.isGraph) {
+        const firstEntityType = thisDocument["@graph"][0]["@type"];
+        if (firstEntityType == "ceterms:LearningProgram") {
+          if (
+            metadata[url].ctidsById[thisDocument["@graph"][0]["@id"]] ===
+            undefined
+          ) {
+            core.error(
+              `${thisDocument["@graph"][0]["@id"]}: Could not publish LearningProgram Graph ${url}, because it does not declare a CTID.`
+            );
+          } else {
+            await publishLearningProgram(
+              thisDocument,
+              metadata[url],
+              registryConfig
+            );
+          }
+        }
+      } else {
+        core.info(
+          "TODO: implement spidering for certain classes and packaging as a graph for publication"
+        );
+      }
+    })
+  );
 };
