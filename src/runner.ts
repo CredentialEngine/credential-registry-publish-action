@@ -126,7 +126,7 @@ export const run = async () => {
   const registryApiKey = core.getInput("registry_api_key");
   if (!registryApiKey) {
     core.error(
-      "Invalid registry-api-key input. You must provide a registry API key."
+      "Invalid registry_api_key input. You must provide a registry API key."
     );
     return;
   }
@@ -134,7 +134,7 @@ export const run = async () => {
   const registryOrgCtid = core.getInput("organization_ctid");
   if (!registryOrgCtid) {
     core.error(
-      "Invalid organization-ctid input. You must provide a CTID of the Registry organization to publish to."
+      "Invalid organization_ctid input. You must provide a CTID of the Registry organization to publish to."
     );
     return;
   }
