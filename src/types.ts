@@ -17,6 +17,7 @@ export interface RegistryConfig {
   registryBaseUrl: string;
   registryApiKey: string;
   registryOrgCtid: string;
+  dryRun: boolean;
 }
 
 export interface DocumentMetadata {
@@ -26,4 +27,15 @@ export interface DocumentMetadata {
   entityTypes: { [key: string]: string[] };
   entitiesByType: { [key: string]: string[] };
   ctidsById: { [key: string]: string };
+}
+
+export interface GraphDocument {
+  "@graph": any[];
+  "@context": string;
+  "@id"?: string;
+}
+
+export interface BasicEntity {
+  "@id": string;
+  "@type": string | string[];
 }

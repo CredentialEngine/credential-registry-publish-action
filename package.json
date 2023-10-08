@@ -4,7 +4,7 @@
   "description": "A GitHub Action that pulls CTDL JSON-LD-formatted data from configured source URLs and publishes it on behalf of an organization to the Credential Registry. ",
   "main": "dist/index.js",
   "scripts": {
-    "test": "NODE_ENV=test ts-mocha test/**/*.test.ts",
+    "test": "NODE_ENV=test ./node_modules/mocha/bin/_mocha -r ts-node/register --timeout 999999 --colors ./test/**/*.test.ts",
     "build": "npx ncc build src/index.ts -o dist --license licenses.txt",
     "local": "ts-node src/local.ts"
   },
