@@ -178,7 +178,7 @@ export const processEntity = async (
                 return;
               }
               const idReplacedJson = replaceIdWithRegistryId(propValueJson, rc);
-              entityStore.registerEntity(idReplacedJson, true, entityId);
+              entityStore.registerEntity(idReplacedJson, true, doc["@id"]);
               entityStore.sameAsIndex[propValueJson["@id"]] =
                 idReplacedJson["@id"];
               tempArray.push(
@@ -195,7 +195,7 @@ export const processEntity = async (
             typeof propValue["@id"] === "string" &&
             propValue["@id"].startsWith("_:")
           ) {
-            entityStore.registerEntity(propValue, false, entityId);
+            entityStore.registerEntity(propValue, false, doc["@id"]);
             tempArray.push(propValue["@id"]);
           } else if (typeof propValue["@id"] === "string") {
             const newBlankNodeIdentifier = `_:b${uuidv4()}`;
@@ -209,7 +209,7 @@ export const processEntity = async (
                 ],
               },
               false,
-              entityId
+              doc["@id"]
             );
 
             tempArray.push(newBlankNodeIdentifier);
@@ -223,7 +223,7 @@ export const processEntity = async (
                 "@id": newBlankNodeIdentifier,
               },
               false,
-              entityId
+              doc["@id"]
             );
           }
         }

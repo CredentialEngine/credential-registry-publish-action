@@ -66,14 +66,12 @@ export const publishDocument = async (
 
   if (publishJson["Successful"] == false) {
     core.error(
-      `Error publishing learning program: \n${publishJson["Messages"].join(
-        "\n"
-      )}`
+      `Errors publishing ${entityType}: ${publishJson["Messages"].join(", ")}`
     );
     return;
   }
 
-  core.info(`Published learning program ${graphId} with CTID ${ctid}.`);
+  core.info(`Published ${entityType} ${graphId} with CTID ${ctid}.`);
 };
 
 /* ---------------

@@ -6,7 +6,11 @@ import expect from "expect.js";
 
 import { run } from "../src/runner";
 import { RegistryConfig } from "../src/types";
-import { processEntity, entityStore } from "../src/graphs";
+import {
+  processEntity,
+  entityStore,
+  extractGraphForEntity,
+} from "../src/graphs";
 
 // Loads inputs as env vars from .env file, so that they're available to core.getInput() calls
 dotenv.config();
@@ -157,5 +161,38 @@ describe("Learning Program Graph Preparation", () => {
     expect(entityStore.get(doc["ceterms:approvedBy"][0]).entity["@id"]).to.eql(
       doc["ceterms:approvedBy"][0]
     );
+  });
+
+  it("should process a ConditionProfile into the graph", async function () {
+    const testEntity = {
+      "@id":
+        "https://example.com/learningProgram/b304a9b7-61f0-465d-83cb-5a4411a5f75c",
+      "@type": "ceterms:LearningProgram",
+      "ceterms:ctid": "b304a9b7-61f0-465d-83cb-5a4411a5f75c",
+      "ceterms:requires": [
+        {
+          "@type": "ceterms:ConditionProfile",
+          "ceterms:name": {
+            "en-US": "Program Prerequisite Conditions",
+          },
+          "ceterms:assertedBy": [
+            "https://credentialengine.github.io/credential-registry-ingest-examples/Organization/1/Organization-1.json",
+          ],
+          "ceterms:description": {
+            "en-US":
+              "Anyone who is a high school graduate or anyone age 18 or older can enroll.",
+          },
+        },
+      ],
+    };
+
+    const doc = await processEntity(testEntity, defaultRegistryConfig);
+    expect(Object.keys(entityStore.entities).length).to.equal(2);
+    expect(doc["ceterms:requires"][0]).to.contain("_:");
+
+    const graph = extractGraphForEntity(doc["@id"], defaultRegistryConfig);
+    expect(graph["@graph"].length).to.equal(2);
+    expect(graph["@graph"][1]["@type"]).to.equal("ceterms:ConditionProfile");
+    expect(graph["@graph"][1]["@id"]).to.eql(doc["ceterms:requires"][0]);
   });
 });
