@@ -90,6 +90,7 @@ describe("Graph extraction", () => {
           "@id": "http://example.com/credential/2",
           "@type": "ceterms:Credential",
         },
+        "ceterms:isPreparationFor": ["_:abc123"],
       },
       {
         "@id": "http://example.com/credential/2",
@@ -99,11 +100,16 @@ describe("Graph extraction", () => {
         "@id": "http://example.com/credential/3",
         "@type": "ceterms:Credential",
       },
+      {
+        "@id": "_:abc123",
+        "@type": "ceterms:ConditionProfile",
+      },
     ];
 
     entityStore.registerEntity(entities[0], true);
     entityStore.registerEntity(entities[1], false, entities[0]["@id"]);
     entityStore.registerEntity(entities[2], false);
+    entityStore.registerEntity(entities[3], false, entities[0]["@id"]);
 
     // Act
     const extracted = extractGraphForEntity(
@@ -115,7 +121,7 @@ describe("Graph extraction", () => {
     expect(extracted["@graph"].length).to.eql(2);
     expect(extracted["@graph"].map((e) => e["@id"])).to.eql([
       entities[0]["@id"],
-      entities[1]["@id"],
+      entities[3]["@id"], // This entity is included because it's not a top-level class.
     ]);
   });
 });

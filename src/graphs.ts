@@ -8,10 +8,12 @@ import {
   RegistryConfig,
 } from "./types";
 import {
+  getPropertiesForClass,
+  getRangeForProperty,
   getTopLevelPointerPropertiesForClass,
   topLevelClassURIs,
 } from "./ctdl";
-import { arrayOf, replaceIdWithRegistryId } from "./utils";
+import { arrayOf, decorateIndex, replaceIdWithRegistryId } from "./utils";
 
 interface EntityStore {
   [key: string]: {
@@ -62,7 +64,11 @@ export const entityStore: Store = {
     const id = entity["@id"];
     if (!id) return;
     const exists = !!this.entities[id];
-    if (!exists || (exists && fetched && !this.entities[id].fetched)) {
+    if (
+      !exists ||
+      (exists && fetched && !this.entities[id].fetched) ||
+      (exists && processed && !this.entities[id].processed)
+    ) {
       this.entities[id] = {
         fetched,
         entity,
@@ -122,6 +128,7 @@ export const processEntity = async (
 
   for (const prop of pointers) {
     if (doc[prop]) {
+      // TODO: Separate out into function with signature doc[prop] = processProperty(doc, prop, ...)
       const propArray = arrayOf(doc[prop]);
       let tempArray = [];
       for (const [index, propValue] of propArray.entries()) {
@@ -187,22 +194,55 @@ export const processEntity = async (
             }
           }
         }
-        // else if propValue is an object, it is a blank node
-        // add it to the graphData and replace reference to it with a newly assigned blank node identifier
-        // or it's id
+        // else if propValue is an object, it may need to be embedded or may need to be separated
+        // (either as a reference to another registry resource or presented as a blank node in this
+        // graph), depending on its type and whether or not is has a CTID defined.
         else if (typeof propValue === "object") {
+          // if it has a type defined, check if it is in range of the expected node types for this
+          // property. Throw an error if not.
+          const nodeType = propValue["@type"];
+          const inRangeTypesForProp = nodeType ? getRangeForProperty(prop) : [];
+
+          // Leave in place if there is no type. API validation will catch it if it's a problem.
+          if (!nodeType || typeof nodeType !== "string") continue;
+
+          // Case A: If it is a declared but unsupported value for this property, throw an error.
+          if (!inRangeTypesForProp.includes(nodeType)) {
+            core.error(
+              `Error: invalid value of type ${nodeType} for property ${prop} ${decorateIndex(
+                index
+              )} in entity ${entityId}`
+            );
+            return;
+          }
+
+          // It is either declared here as a blank node; or is a embedded reference to another
+          // named node (that should be registered with a "from", so that it doesn't overwrite a
+          // directly fetched entity); or is a reference to another node that should be
+          // normalized.
+
+          // Case B: It is declared here as a blank node. It should either be left in place
+          // (ConditionProfile) or registered as a new blank node entity.
           if (
+            topLevelClassURIs.includes(nodeType) &&
             typeof propValue["@id"] === "string" &&
             propValue["@id"].startsWith("_:")
           ) {
             entityStore.registerEntity(propValue, false, doc["@id"]);
             tempArray.push(propValue["@id"]);
-          } else if (typeof propValue["@id"] === "string") {
-            const newBlankNodeIdentifier = `_:b${uuidv4()}`;
+          }
+
+          // Case C: It is a reference to another node with its own URL that may be published,
+          // as the top-level entity of its own graph. It'll be referenced by its CTID here.
+          else if (
+            topLevelClassURIs.includes(nodeType) &&
+            typeof propValue["ceterms:ctid"] === "string"
+          ) {
+            const registryIdentifier = `${rc.registryBaseUrl}/resources/${propValue["ceterms:ctid"]}`;
             entityStore.registerEntity(
               {
                 ...propValue,
-                "@id": newBlankNodeIdentifier,
+                "@id": registryIdentifier,
                 "ceterms:sameAs": [
                   ...arrayOf(propValue["ceterms:sameAs"] ?? []),
                   propValue["@id"],
@@ -212,9 +252,9 @@ export const processEntity = async (
               doc["@id"]
             );
 
-            tempArray.push(newBlankNodeIdentifier);
-            entityStore.sameAsIndex[propValue["@id"]] = newBlankNodeIdentifier;
-          } else {
+            tempArray.push(registryIdentifier);
+            entityStore.sameAsIndex[propValue["@id"]] = registryIdentifier;
+          } else if (topLevelClassURIs.includes(nodeType)) {
             const newBlankNodeIdentifier = `_:b${uuidv4()}`;
             tempArray.push(newBlankNodeIdentifier);
             entityStore.registerEntity(
@@ -225,6 +265,9 @@ export const processEntity = async (
               false,
               doc["@id"]
             );
+          } else {
+            // Otherwise, leave the element in place; it meets requirements or will be rejected by API
+            tempArray.push(propValue);
           }
         }
       }
@@ -256,7 +299,6 @@ const recurseUntilAllProcessedEntities = async (
   }
 };
 
-// In progress... maybe a good idea
 export const extractGraphForEntity = (
   entityId: string,
   rc: RegistryConfig
@@ -265,10 +307,18 @@ export const extractGraphForEntity = (
   if (!entity) return;
 
   const referencedIds = entityStore.entitiesReferencedBy[entityId];
+
+  // Include only the entities that can be found that are not top-level classes
+  // unless they are blank nodes.
   const referencedEntities =
     referencedIds
       ?.map((id) => entityStore.get(id)?.entity)
-      .filter((e) => !!e) ?? [];
+      .filter(
+        (e) =>
+          !!e &&
+          !topLevelClassURIs.includes(e["@type"] || e["@id"].startsWith("_:"))
+      ) ?? [];
+
   return {
     "@context": "https://credreg.net/ctdl/schema/context/json",
     "@id": `${rc.registryBaseUrl}/graph/${entity.entity["ceterms:ctid"]}`,
@@ -310,7 +360,8 @@ export const indexDocuments = (documents: { [key: string]: any }) => {
   // Nodes identifies the document URLs in which the node is represented in the graph.
   let urlsForNode: { [key: string]: string[] } = {};
 
-  // For each document, validate that it is a graph, and index the value of the @type property for each entity as DocumentMetadata
+  // For each document, validate that it is a graph, and index the value of the @type property for
+  // each entity as DocumentMetadata
   Object.keys(documents).forEach((url) => {
     const responseData = documents[url];
     let graph = [];
@@ -324,11 +375,13 @@ export const indexDocuments = (documents: { [key: string]: any }) => {
     }
 
     let entitiesByType: { [key: string]: string[] } = {};
-    // This makes the assumption that if the same node appears in multiple graphs, any one of the graphs will contain all of the types for that node.
+    // This makes the assumption that if the same node appears in multiple graphs, any one of the
+    // graphs will contain all of the types for that node.
     let entityTypes: { [key: string]: string[] } = {};
 
     graph.forEach((entity) => {
-      // If the URL of this document does not yet appear in the array of URLs that contain this node, index it there
+      // If the URL of this document does not yet appear in the array of URLs that contain this
+      // node, index it there
       if (!urlsForNode[entity["@id"]]) {
         urlsForNode[entity["@id"]] = [url];
       } else if (!urlsForNode[entity["@id"]].includes(url)) {

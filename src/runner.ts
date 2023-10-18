@@ -25,7 +25,7 @@ export const publishDocument = async (
   },
   registryConfig: RegistryConfig,
   classMetadata: ClassMetadata
-) => {
+): Promise<boolean> => {
   const ctid = graphDocument["@graph"][0]["ceterms:ctid"];
   const entityType = graphDocument["@graph"][0]["@type"];
   const graphId = `${registryConfig.registryBaseUrl}/graph/${ctid}`;
@@ -38,7 +38,7 @@ export const publishDocument = async (
   if (registryConfig.dryRun) {
     core.info(`Dry run: would publish to ${publishUrl}`);
     core.info(JSON.stringify(graphDocument, null, 2));
-    return;
+    return false;
   }
 
   core.info(`Publishing to ${publishUrl}`);
@@ -59,7 +59,7 @@ export const publishDocument = async (
       `Response Not OK. Error publishing ${entityType} graph ${graphId}: ${publishResponse.statusText}`
     );
     core.info(JSON.stringify(graphDocument, null, 2));
-    return;
+    return false;
   }
 
   const publishJson = await publishResponse.json();
@@ -68,10 +68,11 @@ export const publishDocument = async (
     core.error(
       `Errors publishing ${entityType}: ${publishJson["Messages"].join(", ")}`
     );
-    return;
+    return false;
   }
 
   core.info(`Published ${entityType} ${graphId} with CTID ${ctid}.`);
+  return true;
 };
 
 /* ---------------
@@ -175,6 +176,15 @@ export const run = async () => {
     }
   }
 
+  // Process entities one layer deep
+  const entitiesToProcess = Object.keys(entityStore.entities).filter(
+    (entityId) => !entityStore.entities[entityId].processed
+  );
+  for (const entityId of entitiesToProcess) {
+    const entity = entityStore.get(entityId);
+    await processEntity(entity.entity, registryConfig, entity.sourceUrl);
+  }
+
   // Form an array of entityIds in the entityStore for each entity with a type
   // in topLevelClassURIs This array should be sorted by class with Organization
   // and subtypes first, then Credential and subtypes, then LearningOpportunity
@@ -224,13 +234,18 @@ export const run = async () => {
   const loppIds = learningOpportunitySubtypes
     .map((c) => entitiesByClass[c])
     .flat();
-  const courseIds = entitiesByClass["ceterms:Course"];
-  const orderedEntitiesToPublish = [
-    ...orgIds,
-    ...credentialIds,
-    ...loppIds,
-    ...courseIds,
-  ];
+  const orderedEntitiesToPublish = [...orgIds, ...credentialIds, ...loppIds];
+
+  core.info("------------ ENTITIES TO PUBLISH ------------");
+  core.info(
+    JSON.stringify(
+      orderedEntitiesToPublish.map(
+        (e) => `${e} <= ${entityStore.sameAsIndex[e]}`
+      ),
+      null,
+      2
+    )
+  );
 
   // Extract a graph for each document, determine if it has a CTID, and publish
   // to the appropriate endpoint for the class
@@ -256,6 +271,11 @@ export const run = async () => {
         registryConfig,
         classMetadata[currentEntity.entity["@type"]]
       );
+
+      if (publishResult !== true) {
+        core.info(`Failed publication detected. Exiting...`);
+        break;
+      }
     }
   }
   core.info("------------ PUBLICATION COMPLETE ------------");

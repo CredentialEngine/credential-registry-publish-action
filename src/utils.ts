@@ -21,3 +21,6 @@ export const replaceIdWithRegistryId = (
     "ceterms:sameAs": [...arrayOf(entity["ceterms:sameAs"] ?? []), id],
   };
 };
+
+export const decorateIndex = (index: number): string =>
+  index > 0 ? `[${index}]` : "";

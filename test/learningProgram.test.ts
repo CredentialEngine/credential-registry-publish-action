@@ -139,6 +139,7 @@ describe("Learning Program Graph Preparation", () => {
       "ceterms:ctid": "b304a9b7-61f0-465d-83cb-5a4411a5f75c",
       "ceterms:approvedBy": [
         {
+          // Approved by an organization that does not have a CTID, to become a blank node in this graph
           "@id": `_:2751e0bb-dc56-4524-afe3-1e3d48841876`,
           "@type": "ceterms:QACredentialOrganization",
         },
@@ -163,13 +164,14 @@ describe("Learning Program Graph Preparation", () => {
     );
   });
 
-  it("should process a ConditionProfile into the graph", async function () {
+  it("should process a ConditionProfile and leave it an embedded object", async function () {
     const testEntity = {
       "@id":
         "https://example.com/learningProgram/b304a9b7-61f0-465d-83cb-5a4411a5f75c",
       "@type": "ceterms:LearningProgram",
       "ceterms:ctid": "b304a9b7-61f0-465d-83cb-5a4411a5f75c",
       "ceterms:requires": [
+        // A ConditionProfile that will remain in the entity as an object. This class doesn't ever have a CTID.
         {
           "@type": "ceterms:ConditionProfile",
           "ceterms:name": {
@@ -184,15 +186,29 @@ describe("Learning Program Graph Preparation", () => {
           },
         },
       ],
+      "ceterms:hasPart": [
+        // Includes a Badge that has a CTID
+        {
+          "@id": `${defaultRegistryConfig.registryBaseUrl}/resources/ce-4828`,
+          "@type": "ceterms:Badge",
+          "ceterms:name": {
+            "en-US": "Badge Number 2: Eclectic Badgealoo",
+          },
+          "ceterms:ctid": "ce-4828",
+        },
+      ],
     };
 
     const doc = await processEntity(testEntity, defaultRegistryConfig);
     expect(Object.keys(entityStore.entities).length).to.equal(2);
-    expect(doc["ceterms:requires"][0]).to.contain("_:");
+    expect(doc["ceterms:requires"][0]["@type"]).to.equal(
+      "ceterms:ConditionProfile"
+    );
 
     const graph = extractGraphForEntity(doc["@id"], defaultRegistryConfig);
-    expect(graph["@graph"].length).to.equal(2);
-    expect(graph["@graph"][1]["@type"]).to.equal("ceterms:ConditionProfile");
-    expect(graph["@graph"][1]["@id"]).to.eql(doc["ceterms:requires"][0]);
+    expect(graph["@graph"].length).to.equal(1);
+    expect(graph["@graph"][0]["ceterms:requires"][0]["@type"]).to.equal(
+      "ceterms:ConditionProfile"
+    );
   });
 });

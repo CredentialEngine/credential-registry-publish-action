@@ -50,7 +50,7 @@ export const endpoints = {
   // Learning Opportunity (and Course, specifically)
   "ceterms:Course": "/course/publishGraph",
   "ceterms:LearningOpportunityProfile": "/learningopportunity/publishGraph",
-  "ceterms:LearningProgram": "/learningopportunity/publishGraph",
+  "ceterms:LearningProgram": "/learningprogram/publishGraph",
 };
 
 export interface ClassMetadata {
@@ -164,6 +164,13 @@ export const getPropertiesForClass = (className: string): string[] => {
   );
   const propertyNames = properties.map((prop) => prop["@id"]);
   return propertyNames;
+};
+
+export const getRangeForProperty = (propertyName: string): string[] => {
+  const property = schemaData.merged.find(
+    (entity) => entity["@id"] === propertyName
+  );
+  return property ? property["schema:rangeIncludes"] ?? [] : [];
 };
 
 export const getTopLevelPointerPropertiesForClass = (
