@@ -1,6 +1,6 @@
 import * as core from "@actions/core";
 import { context } from "@actions/github";
-import fetch from "node-fetch-cache";
+import { httpClient } from "./http";
 
 import { CredentialSubtypes } from "./credential";
 import { arrayOf } from "./utils";
@@ -16,7 +16,12 @@ import {
   processEntity,
   indexDocuments,
 } from "./graphs";
-import { topLevelClassURIs, getClassMetadata, ClassMetadata } from "./ctdl";
+import {
+  topLevelClassURIs,
+  getClassMetadata,
+  ClassMetadata,
+  classIsDescendantOf,
+} from "./ctdl";
 
 export const publishDocument = async (
   graphDocument: any & {
@@ -42,7 +47,7 @@ export const publishDocument = async (
   }
 
   core.info(`Publishing to ${publishUrl}`);
-  const publishResponse = await fetch(publishUrl, {
+  const publishResponse = await httpClient.fetch(publishUrl, {
     method: "POST",
     headers: {
       Authorization: `ApiToken ${registryConfig.registryApiKey}`,
@@ -141,7 +146,7 @@ export const run = async () => {
 
   for (const url of urlsArray) {
     core.info(`Fetching ${url} ...`);
-    const response = await fetch(url, {
+    const response = await httpClient.fetch(url, {
       headers: { Accept: "application/json" },
       redirect: "follow",
     });
@@ -203,19 +208,11 @@ export const run = async () => {
     }
   });
 
-  const classMetadata: { [key: string]: ClassMetadata } = {};
-  topLevelClassURIs.forEach((classUri) => {
-    classMetadata[classUri] = getClassMetadata(classUri);
-  });
-  const orgSubtypes = topLevelClassURIs.filter(
-    (c) =>
-      c == "cetermsOrganization" ||
-      classMetadata[c].subClassOf === "ceterms:Organization"
+  const orgSubtypes = topLevelClassURIs.filter((c) =>
+    classIsDescendantOf(c, "ceterms:Organization")
   );
-  const credentialSubtypes = topLevelClassURIs.filter(
-    (c) =>
-      c == "cetermsCredential" ||
-      classMetadata[c].subClassOf === "ceterms:Credential"
+  const credentialSubtypes = topLevelClassURIs.filter((c) =>
+    classIsDescendantOf(c, "ceterms:Credential")
   );
   const learningOpportunitySubtypes = topLevelClassURIs.filter(
     (c) =>
@@ -223,7 +220,7 @@ export const run = async () => {
         "ceterms:LearningOpportunityProfile",
         "ceterms:LearningOpportunity",
       ].includes(c) ||
-      classMetadata[c].subClassOf === "ceterms:LearningOpportunityProfile"
+      classIsDescendantOf(c, "ceterms:LearningOpportunityProfile")
   );
 
   // IDs of organization-type entities to publish
@@ -269,7 +266,7 @@ export const run = async () => {
       const publishResult = await publishDocument(
         graphDocument,
         registryConfig,
-        classMetadata[currentEntity.entity["@type"]]
+        getClassMetadata(currentEntity.entity["@type"])
       );
 
       if (publishResult !== true) {

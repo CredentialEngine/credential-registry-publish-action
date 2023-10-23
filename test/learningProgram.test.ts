@@ -16,7 +16,7 @@ import {
 dotenv.config();
 
 const defaultRegistryConfig: RegistryConfig = {
-  registryBaseUrl: "https://credentialengineregistry.org",
+  registryBaseUrl: "https://sandbox.credentialengineregistry.org",
   registryEnv: "sandbox",
   registryApiKey: "secret",
   registryOrgCtid: "ce-1234",
@@ -74,6 +74,7 @@ describe("Learning Program Graph Preparation", () => {
 
   it("should properly situate an object referenced in a relationship property as a blank node in the graph", async function () {
     const testEntity = {
+      "@context": "https://credreg.net/ctdl/schema/context/json",
       "@id":
         "https://example.com/learningProgram/b304a9b7-61f0-465d-83cb-5a4411a5f75c",
       "@type": "ceterms:LearningProgram",
@@ -103,6 +104,7 @@ describe("Learning Program Graph Preparation", () => {
 
   it("should treat a registry url-identified object as a non-blank node, but move it around", async function () {
     const testEntity = {
+      "@context": "https://credreg.net/ctdl/schema/context/json",
       "@id":
         "https://example.com/learningProgram/b304a9b7-61f0-465d-83cb-5a4411a5f75c",
       "@type": "ceterms:LearningProgram",
@@ -133,6 +135,7 @@ describe("Learning Program Graph Preparation", () => {
 
   it("should be ok with a node identified with a blank node identifier, no duplicates", async function () {
     const testEntity = {
+      "@context": "https://credreg.net/ctdl/schema/context/json",
       "@id":
         "https://example.com/learningProgram/b304a9b7-61f0-465d-83cb-5a4411a5f75c",
       "@type": "ceterms:LearningProgram",
@@ -166,6 +169,7 @@ describe("Learning Program Graph Preparation", () => {
 
   it("should process a ConditionProfile and leave it an embedded object", async function () {
     const testEntity = {
+      "@context": "https://credreg.net/ctdl/schema/context/json",
       "@id":
         "https://example.com/learningProgram/b304a9b7-61f0-465d-83cb-5a4411a5f75c",
       "@type": "ceterms:LearningProgram",
@@ -200,7 +204,10 @@ describe("Learning Program Graph Preparation", () => {
     };
 
     const doc = await processEntity(testEntity, defaultRegistryConfig);
-    expect(Object.keys(entityStore.entities).length).to.equal(2);
+
+    // LearningProgram, QACredentialOrganization, and Badge
+    expect(Object.keys(entityStore.entities).length).to.equal(3);
+
     expect(doc["ceterms:requires"][0]["@type"]).to.equal(
       "ceterms:ConditionProfile"
     );

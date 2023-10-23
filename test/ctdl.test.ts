@@ -3,6 +3,7 @@ import { describe, it } from "mocha";
 import expect from "expect.js";
 
 import {
+  classIsDescendantOf,
   getClassMetadata,
   getTopLevelPointerPropertiesForClass,
 } from "../src/ctdl";
@@ -42,6 +43,30 @@ describe("Discovering information about CTDL Classes, Relationships, and API sup
     );
     expect(relationshipProps.includes("ceterms:hasPart")).to.be(true);
   });
+
+  it("should answer correctly about descendants", function () {
+    expect(
+      classIsDescendantOf("ceterms:Credential", "ceterms:Organization")
+    ).to.be(false);
+    expect(
+      classIsDescendantOf("ceterms:Credential", "ceterms:Credential")
+    ).to.be(true);
+    expect(classIsDescendantOf("ceterms:Badge", "ceterms:Credential")).to.be(
+      true
+    );
+    expect(classIsDescendantOf("ceterms:Credential", "ceterms:Badge")).to.be(
+      false
+    );
+
+    // Non-existent classes
+    expect(classIsDescendantOf("ceterms:Credential", "ceterms:Foo")).to.be(
+      false
+    );
+    expect(classIsDescendantOf("ceterms:Foo", "ceterms:Credential")).to.be(
+      false
+    );
+    expect(classIsDescendantOf("ceterms:Foo", "ceterms:Bar")).to.be(false);
+  });
 });
 
 describe("Entity store manipulation", () => {
@@ -76,6 +101,21 @@ describe("Entity store manipulation", () => {
     ]);
 
     entityStore.reset();
+  });
+
+  it("should fuzzy match an entity with sameAs", function () {
+    const entity = {
+      "@id": `${defaultRegistryConfigForTests.registryBaseUrl}/resources/ce-1234`,
+      "@type": "ceterms:Credential",
+      "ceterms:ctid": "ce-1234",
+      "ceterms:sameAs": ["https://example.com/organization/1"],
+    };
+    entityStore.registerEntity(entity, true);
+    expect(entityStore.get(entity["@id"])).to.not.be(undefined);
+    expect(entityStore.get(entity["ceterms:sameAs"][0])).to.be(undefined);
+    expect(entityStore.getFuzzy(entity["ceterms:sameAs"][0])).to.not.be(
+      undefined
+    );
   });
 });
 

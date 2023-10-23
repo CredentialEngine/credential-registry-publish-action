@@ -102,7 +102,7 @@ const QDataSchema = JSON.parse(
 );
 
 //Hold all schema data
-let schemaData = {
+let schemaData: { [key: string]: any[] } = {
   ctdl: CtdlSchema,
   ctdlasn: CtdlAsnSchema,
   qdata: QDataSchema,
@@ -116,9 +116,8 @@ appendTerms(schemaData.merged, schemaData.qdata);
 
 //For each top-level class (ie class with a CTID), render the class and the properties for that class which point to a top-level class
 //Get the CTID property and top-level classes
-const ctidProperty = schemaData.merged.find(
-  (item) => item["@id"] == "ceterms:ctid"
-);
+const ctidProperty =
+  schemaData.merged.find((item) => item["@id"] == "ceterms:ctid") ?? {};
 const topLevelClasses = schemaData.merged.filter((item) =>
   ctidProperty["schema:domainIncludes"].includes(item["@id"])
 );
@@ -156,6 +155,18 @@ export const getClassMetadata = (className: string): ClassMetadata => {
   };
 };
 
+const classMetadata: { [key: string]: ClassMetadata } =
+  schemaData.merged.reduce((acc, item, ind, arr) => {
+    const thisMeta =
+      item["@type"] === "rdfs:Class"
+        ? getClassMetadata(item["@id"])
+        : undefined;
+    return {
+      ...acc,
+      ...(thisMeta ? { [item["@id"]]: thisMeta } : {}),
+    };
+  });
+
 export const getPropertiesForClass = (className: string): string[] => {
   const properties = schemaData.merged.filter(
     (entity) =>
@@ -185,4 +196,27 @@ export const getTopLevelPointerPropertiesForClass = (
       )
   );
   return classProps.map((prop) => prop["@id"]);
+};
+
+// Get the properties that might have a ceterms:ConditionProfile entity in range:
+export const getConditionProfilePointerPropertiesForClass = (
+  className: string
+): string[] => {
+  const classProps = schemaData.merged.filter(
+    (entity) =>
+      entity["@type"] === "rdf:Property" &&
+      entity["schema:domainIncludes"]?.includes(className) &&
+      entity["schema:rangeIncludes"]?.some(
+        (c) => "ceterms:ConditionProfile" == c
+      )
+  );
+  return classProps.map((prop) => prop["@id"]);
+};
+
+export const classIsDescendantOf = (c: string, ancestor: string) => {
+  if (c === ancestor) return true;
+  const parent = classMetadata[c]?.subClassOf as string | undefined;
+  if (!parent) return false;
+  if (parent === ancestor) return true;
+  return classIsDescendantOf(parent, ancestor);
 };

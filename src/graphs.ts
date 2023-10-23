@@ -1,5 +1,5 @@
 import * as core from "@actions/core";
-import fetch from "node-fetch-cache";
+import { httpClient } from "./http";
 import { v4 as uuidv4 } from "uuid";
 import {
   BasicEntity,
@@ -8,6 +8,7 @@ import {
   RegistryConfig,
 } from "./types";
 import {
+  getConditionProfilePointerPropertiesForClass,
   getPropertiesForClass,
   getRangeForProperty,
   getTopLevelPointerPropertiesForClass,
@@ -15,21 +16,22 @@ import {
 } from "./ctdl";
 import { arrayOf, decorateIndex, replaceIdWithRegistryId } from "./utils";
 
-interface EntityStore {
-  [key: string]: {
-    fetched: boolean;
-    entity: any & {
-      "@id": string;
-      "@type": string;
-    };
-    processed: boolean;
+interface StoreEntity {
+  fetched: boolean;
+  entity: any & {
+    "@id": string;
+    "@type": string;
   };
+  processed: boolean;
+}
+interface EntityStore {
+  [key: string]: StoreEntity;
 }
 
 interface Store {
   entities: EntityStore;
-  get(id: string): any;
-
+  get(idx: string): any;
+  getFuzzy(idx: string): any;
   // Index of ceterms:sameAs references in the graph. Key is the original URL, value is the registry URL.
   // This allows only one value for each URL. Maybe in the future, it would be necessary to track multiple.
   sameAsIndex: { [key: string]: string };
@@ -52,8 +54,16 @@ export const entityStore: Store = {
   entities: {},
   sameAsIndex: {},
   entitiesReferencedBy: {},
-  get(id: string) {
-    return this.entities[id];
+  get: function (idx: string) {
+    return this.entities[idx];
+  },
+  getFuzzy: function (idx: string) {
+    const idMatch = this.get(idx);
+    if (idMatch) return idMatch;
+
+    return Object.values(this.entities).find((val: any) =>
+      val.entity["ceterms:sameAs"]?.includes(idx)
+    );
   },
   registerEntity(
     entity: any,
@@ -100,6 +110,55 @@ export const entityStore: Store = {
   },
 };
 
+const processConditionProfile = async (
+  cp: { "@type": string; [key: string]: any },
+  rc: RegistryConfig,
+  parentEntityId?: string
+) => {
+  let ret = {
+    ...cp,
+  };
+  const pointers = getTopLevelPointerPropertiesForClass(
+    "ceterms:ConditionProfile"
+  );
+  for (const prop of pointers) {
+    let tempArray: string[] = [];
+    if (cp[prop]) {
+      for (const propValue of arrayOf(cp[prop])) {
+        // Filter out erroneous non-string values
+        if (typeof propValue !== "string") continue;
+
+        // if a string reference is already registered, just replace it with the registryId based on the CTID
+        if (entityStore.getFuzzy(propValue)) {
+          tempArray.push(entityStore.getFuzzy(propValue).entity["@id"]);
+        } else if (propValue.startsWith(`${rc.registryBaseUrl}/resources/`)) {
+          core.info(
+            `ConditionProfile references resource ${propValue} which is already presumed to be in the registry. Not adding it to graph.`
+          );
+          tempArray.push(propValue);
+        } else if (propValue.startsWith("http")) {
+          core.info(
+            `Found reference in ConditionProfile to organization ${propValue}. Registering as a blank node in the graph.`
+          );
+          const newBlankNodeIdentifier = `_:b${uuidv4()}`;
+          entityStore.registerEntity(
+            {
+              "@id": newBlankNodeIdentifier,
+              "@type": "ceterms:QACredentialOrganization",
+              "ceterms:sameAs": [propValue],
+            },
+            false,
+            parentEntityId
+          );
+          tempArray.push(newBlankNodeIdentifier);
+        }
+      }
+      ret[prop] = tempArray;
+    }
+  }
+  return ret;
+};
+
 export const processEntity = async (
   entity: BasicEntity & any,
   rc: RegistryConfig,
@@ -108,8 +167,14 @@ export const processEntity = async (
   const entityType = arrayOf(entity["@type"]) as string[];
   const entityId = entity["@id"];
 
+  // Make no changes to the entity if it is not a top-level class... consider should it be registered though?
   if (entityType.length === 0 || !topLevelClassURIs.includes(entityType[0]))
     return entity;
+
+  if (!entity["ceterms:ctid"]) {
+    core.error(`No CTID found in entity ${entityId}`);
+    return;
+  }
 
   let doc = {
     ...entity,
@@ -124,22 +189,26 @@ export const processEntity = async (
   }
 
   const entityPrimaryType = entityType[0];
-  const pointers = getTopLevelPointerPropertiesForClass(entityPrimaryType);
+  const pointers = new Set(
+    getTopLevelPointerPropertiesForClass(entityPrimaryType).concat(
+      getConditionProfilePointerPropertiesForClass(entityPrimaryType)
+    )
+  );
 
   for (const prop of pointers) {
     if (doc[prop]) {
       // TODO: Separate out into function with signature doc[prop] = processProperty(doc, prop, ...)
       const propArray = arrayOf(doc[prop]);
-      let tempArray = [];
+      let tempArray: any[] = [];
       for (const [index, propValue] of propArray.entries()) {
         if (typeof propValue === "string") {
           // if a string reference is already registered, just replace it with the registryId based on the CTID
-          if (entityStore.get(propValue)) {
+          if (entityStore.getFuzzy(propValue)) {
             const propValueCtid = entityStore.get(propValue)["ceterms:ctid"];
             tempArray.push(`${rc.registryBaseUrl}/resources/${propValueCtid}`);
           } else if (propValue.startsWith(`${rc.registryBaseUrl}/resources/`)) {
             core.info(
-              `LearningProgram ${doc["ceterms:ctid"]} references resource ${propValue} which is already in the registry. Not adding it to graph.`
+              `Entity ${doc["ceterms:ctid"]} references resource ${propValue} which is already presumed to be in the registry. Not adding it to graph.`
             );
             tempArray.push(propValue);
           }
@@ -147,7 +216,7 @@ export const processEntity = async (
           // replace it with the registry URL that is now the canonical reference to this graph entry
           else if (entityStore.sameAsIndex[propValue]) {
             core.info(
-              `LearningProgram ${doc["ceterms:ctid"]} references resource ${propValue} which is already in the registry. ` +
+              `${entityPrimaryType} ${doc["ceterms:ctid"]} references resource ${propValue} which is already in the registry. ` +
                 `Replacing with ${entityStore.sameAsIndex[propValue]}.`
             );
             tempArray.push(entityStore.sameAsIndex[propValue]);
@@ -157,7 +226,7 @@ export const processEntity = async (
             core.info(
               `Fetching document with reference ${doc["@id"]} -> ${prop} [${index}]: ${propValue}`
             );
-            const propValueResponse = await fetch(propValue);
+            const propValueResponse = await httpClient.fetch(propValue);
             if (propValueResponse.ok) {
               const propValueJson = await propValueResponse.json();
               // if the fetched entity does not have the right context, express an error and return
@@ -204,7 +273,10 @@ export const processEntity = async (
           const inRangeTypesForProp = nodeType ? getRangeForProperty(prop) : [];
 
           // Leave in place if there is no type. API validation will catch it if it's a problem.
-          if (!nodeType || typeof nodeType !== "string") continue;
+          if (!nodeType || typeof nodeType !== "string") {
+            tempArray.push(propValue);
+            continue;
+          }
 
           // Case A: If it is a declared but unsupported value for this property, throw an error.
           if (!inRangeTypesForProp.includes(nodeType)) {
@@ -216,14 +288,17 @@ export const processEntity = async (
             return;
           }
 
-          // It is either declared here as a blank node; or is a embedded reference to another
-          // named node (that should be registered with a "from", so that it doesn't overwrite a
-          // directly fetched entity); or is a reference to another node that should be
-          // normalized.
-
-          // Case B: It is declared here as a blank node. It should either be left in place
-          // (ConditionProfile) or registered as a new blank node entity.
+          // Case B: It is a ConditionProfile, which is a special case that is always embedded
           if (
+            arrayOf(propValue["@type"]).includes("ceterms:ConditionProfile")
+          ) {
+            tempArray.push(
+              await processConditionProfile(propValue, rc, doc["@id"])
+            );
+          }
+
+          // Case B: It is declared here as a blank node. Push it out separately in the graph
+          else if (
             topLevelClassURIs.includes(nodeType) &&
             typeof propValue["@id"] === "string" &&
             propValue["@id"].startsWith("_:")
@@ -321,7 +396,7 @@ export const extractGraphForEntity = (
 
   return {
     "@context": "https://credreg.net/ctdl/schema/context/json",
-    "@id": `${rc.registryBaseUrl}/graph/${entity.entity["ceterms:ctid"]}`,
+    // "@id": `${rc.registryBaseUrl}/graph/${entity.entity["ceterms:ctid"]}`,
     "@graph": [entity.entity, ...referencedEntities],
   };
 };
@@ -364,7 +439,7 @@ export const indexDocuments = (documents: { [key: string]: any }) => {
   // each entity as DocumentMetadata
   Object.keys(documents).forEach((url) => {
     const responseData = documents[url];
-    let graph = [];
+    let graph: any[] = [];
     let ctidsById: { [key: string]: string } = {};
     let isGraph = false;
     if (validateGraph(url, responseData)) {
