@@ -21170,6 +21170,30 @@ const classIsDescendantOf = (c, ancestor) => {
     return classIsDescendantOf(parent, ancestor);
 };
 
+;// CONCATENATED MODULE: ./src/error.ts
+
+class ActionError extends Error {
+    constructor(errorMessage, critical = false) {
+        super(errorMessage);
+        this.name = this.constructor.name;
+        this.critical = critical;
+    }
+}
+// This function is easier to spy on in tests than the class constructor directly.
+/**
+ * Generate an error message with optional directive to stop execution
+ * @param {string} message Error message to report to logs
+ * @param {boolean} critical - if true will halt execution of the action
+ * @returns {ActionError}
+ */
+const err = (message, critical = false) => new ActionError(message, critical);
+const handleError = (error) => {
+    core.error(error.message);
+    if (error.critical) {
+        core.setFailed(error.message);
+    }
+};
+
 ;// CONCATENATED MODULE: ./src/graphs.ts
 var graphs_awaiter = (undefined && undefined.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
@@ -21180,6 +21204,7 @@ var graphs_awaiter = (undefined && undefined.__awaiter) || function (thisArg, _a
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+
 
 
 
@@ -21258,8 +21283,7 @@ const fetchAndRegisterEntity = (entityUrl, rc, from) => graphs_awaiter(void 0, v
             // if the fetched entity does not have the right context, express an error and return
             // In the future, we can JSON-LD compact it into the expected context before continuing
             // But we'll have to check to make sure the language maps and handle [value] => value transforms.
-            core.error(`Error fetching ${entityUrl}: the fetched entity does not have the expected CTDL context.`);
-            return;
+            throw err(`Error fetching ${entityUrl}: the fetched entity does not have the expected CTDL context.`, true);
         }
         // if the fetched entity does not have a CTID, Register it as a blank node.
         if (!jsonData["ceterms:ctid"]) {
@@ -21272,8 +21296,7 @@ const fetchAndRegisterEntity = (entityUrl, rc, from) => graphs_awaiter(void 0, v
         }
         // if the fetched entity does not have an @id or it is not the same as propValue, express an error and return
         if (jsonData["@id"] != entityUrl) {
-            core.error(`Error fetching ${entityUrl}: the fetched entity does not have an @id or it is not the same as the requested URL.`);
-            return;
+            throw err(`Error fetching ${entityUrl}: the fetched entity does not have an @id or it is not the same as the requested URL.`, true);
         }
         const newEntity = entityStore.registerEntity(jsonData, true, rc, from);
         return newEntity;
@@ -21324,8 +21347,7 @@ const processEntity = (entity, rc, sourceGraphUrl = undefined) => graphs_awaiter
     if (entityType.length === 0 || !topLevelClassURIs.includes(entityType[0]))
         return entity;
     if (!entity["ceterms:ctid"] && !entityId.startsWith("_:")) {
-        core.error(`No CTID found in entity ${entityId}`);
-        return;
+        throw err(`No CTID found in entity ${entityId}`);
     }
     let doc = Object.assign({}, entity);
     // Process @id sameAs reference
@@ -21381,8 +21403,7 @@ const processEntity = (entity, rc, sourceGraphUrl = undefined) => graphs_awaiter
                     }
                     // Case A: If it is a declared but unsupported value for this property, throw an error.
                     if (!inRangeTypesForProp.includes(nodeType)) {
-                        core.error(`Error: invalid value of type ${nodeType} for property ${prop} ${decorateIndex(index)} in entity ${entityId}`);
-                        return;
+                        throw err(`Error: invalid value of type ${nodeType} for property ${prop} ${decorateIndex(index)} in entity ${entityId}`);
                     }
                     // Case B: It is a ConditionProfile, which is a special case that is always embedded
                     if (arrayOf(propValue["@type"]).includes("ceterms:ConditionProfile")) {
@@ -21553,6 +21574,7 @@ var runner_awaiter = (undefined && undefined.__awaiter) || function (thisArg, _a
 
 
 
+
 const publishDocument = (graphDocument, registryConfig, classMetadata) => runner_awaiter(void 0, void 0, void 0, function* () {
     const ctid = graphDocument["@graph"][0]["ceterms:ctid"];
     const entityType = graphDocument["@graph"][0]["@type"];
@@ -21562,7 +21584,7 @@ const publishDocument = (graphDocument, registryConfig, classMetadata) => runner
     if (registryConfig.dryRun) {
         core.info(`Dry run: would publish to ${publishUrl}`);
         core.info(JSON.stringify(graphDocument, null, 2));
-        return false;
+        return true;
     }
     const publishResponse = yield httpClient.fetch(publishUrl, {
         method: "POST",
@@ -21578,12 +21600,11 @@ const publishDocument = (graphDocument, registryConfig, classMetadata) => runner
     if (!publishResponse.ok) {
         core.error(`Response Not OK. Error publishing ${entityType} graph ${graphId}: ${publishResponse.statusText}`);
         core.info(JSON.stringify(graphDocument, null, 2));
-        return false;
+        throw err("Publication failure. See logs for details.", true);
     }
     const publishJson = yield publishResponse.json();
     if (publishJson["Successful"] == false) {
-        core.error(`Errors publishing ${entityType}: ${publishJson["Messages"].join(", ")}`);
-        return false;
+        throw err(`Errors publishing ${entityType}: ${publishJson["Messages"].join(", ")}`, true);
     }
     core.info(`Success: Published ${entityType} ${graphId}`);
     return true;
@@ -21591,26 +21612,23 @@ const publishDocument = (graphDocument, registryConfig, classMetadata) => runner
 /* ---------------
 - RUN THE ACTION -
 --------------- */
-const run = () => runner_awaiter(void 0, void 0, void 0, function* () {
+const runInternal = () => runner_awaiter(void 0, void 0, void 0, function* () {
     core.info(decorateInfoHeader("Launching Credential Registry Publish Action"));
     // Get inputs and validate them
     const urls = core.getInput("urls");
     const registryEnv = core.getInput("registry_env");
     const registryBaseUrl = RegistryBaseUrls[registryEnv];
     if (!registryBaseUrl) {
-        core.error('Invalid registry environment. Must be one of "sandbox", "staging", or "production".');
-        return;
+        throw err('Invalid registry environment. Must be one of "sandbox", "staging", or "production".', true);
     }
     core.info(`Selected ${registryEnv} environment.`);
     const registryApiKey = core.getInput("registry_api_key");
     if (!registryApiKey) {
-        core.error("Invalid registry_api_key input. You must provide a registry API key.");
-        return;
+        throw err("Invalid registry_api_key input. You must provide a registry API key.", true);
     }
     const registryOrgCtid = core.getInput("organization_ctid");
     if (!registryOrgCtid) {
-        core.error("Invalid organization_ctid input. You must provide a CTID of the Registry organization to publish to.");
-        return;
+        throw err("Invalid organization_ctid input. You must provide a CTID of the Registry organization to publish to.", true);
     }
     const dryRun = core.getInput("dry_run") === "true";
     if (dryRun) {
@@ -21642,7 +21660,7 @@ const run = () => runner_awaiter(void 0, void 0, void 0, function* () {
             redirect: "follow",
         });
         if (!response.ok) {
-            core.error(`URL ${url} returned status ${response.status}.`);
+            throw err(`URL ${url} returned status ${response.status}.`, true);
         }
         else {
             const json = yield response.json();
@@ -21704,7 +21722,7 @@ const run = () => runner_awaiter(void 0, void 0, void 0, function* () {
     for (const entityId of orderedEntitiesToPublish) {
         const currentEntity = entityStore.get(entityId);
         if (typeof (currentEntity === null || currentEntity === void 0 ? void 0 : currentEntity.entity["ceterms:ctid"]) !== "string") {
-            core.error(`Organization ${entityId} does not have a usable CTID. It will not be published.`);
+            core.error(`Processed entity from ${currentEntity.entity["ceterms:sameAs"]} does not have a usable CTID. It will not be published.`);
         }
         else {
             const graphDocument = yield extractGraphForEntity(entityId, registryConfig);
@@ -21715,11 +21733,25 @@ const run = () => runner_awaiter(void 0, void 0, void 0, function* () {
             const publishResult = yield publishDocument(graphDocument, registryConfig, getClassMetadata(currentEntity.entity["@type"]));
             if (publishResult !== true) {
                 core.info(`Failed publication detected. Exiting...`);
+                core.setFailed("One or more resources failed to publish. See logs for details.");
                 break;
             }
         }
     }
     core.info(decorateInfoHeader("PUBLICATION COMPLETE"));
+});
+const run = () => runner_awaiter(void 0, void 0, void 0, function* () {
+    try {
+        yield runInternal();
+    }
+    catch (error) {
+        if (error instanceof ActionError)
+            handleError(error);
+        else {
+            core.error(error);
+            core.setFailed(error.message);
+        }
+    }
 });
 
 ;// CONCATENATED MODULE: ./src/index.ts

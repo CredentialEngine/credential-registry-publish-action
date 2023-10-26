@@ -1,6 +1,7 @@
 import * as dotenv from "dotenv";
 import * as sinon from "sinon";
 import * as core from "@actions/core";
+import * as errors from "../src/error";
 import { describe, it } from "mocha";
 import expect from "expect.js";
 
@@ -29,7 +30,7 @@ describe("Learning Program", () => {
     const cachedRegistryEnv = process.env.INPUT_REGISTRY_ENV;
     delete process.env.INPUT_REGISTRY_ENV;
 
-    const errorSpy = sinon.spy(core, "error");
+    const errorSpy = sinon.spy(errors, "err");
 
     // Act
     run();
@@ -37,7 +38,8 @@ describe("Learning Program", () => {
     // Assert that registry env error is logged to the console.
     sinon.assert.calledWithMatch(
       errorSpy,
-      sinon.match(/Invalid registry environment\./)
+      sinon.match(/Invalid registry environment\./),
+      true
     );
 
     // Clean up

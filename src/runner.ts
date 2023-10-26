@@ -1,8 +1,5 @@
 import * as core from "@actions/core";
-import { context } from "@actions/github";
 import { httpClient } from "./http";
-
-import { CredentialSubtypes } from "./credential";
 import { arrayOf, decorateInfoHeader } from "./utils";
 import {
   RegistryEnvironment,
@@ -18,14 +15,8 @@ import {
   documentIsCtdlJsonEntity,
   documentIsAGraph,
 } from "./graphs";
-import {
-  topLevelClassURIs,
-  getClassMetadata,
-  ClassMetadata,
-  classIsDescendantOf,
-} from "./ctdl";
-import { get } from "http";
-import { getPriority } from "os";
+import { topLevelClassURIs, getClassMetadata, ClassMetadata } from "./ctdl";
+import { ActionError, err, handleError } from "./error";
 
 export const publishDocument = async (
   graphDocument: any & {
@@ -47,7 +38,7 @@ export const publishDocument = async (
   if (registryConfig.dryRun) {
     core.info(`Dry run: would publish to ${publishUrl}`);
     core.info(JSON.stringify(graphDocument, null, 2));
-    return false;
+    return true;
   }
 
   const publishResponse = await httpClient.fetch(publishUrl, {
@@ -67,16 +58,16 @@ export const publishDocument = async (
       `Response Not OK. Error publishing ${entityType} graph ${graphId}: ${publishResponse.statusText}`
     );
     core.info(JSON.stringify(graphDocument, null, 2));
-    return false;
+    throw err("Publication failure. See logs for details.", true);
   }
 
   const publishJson = await publishResponse.json();
 
   if (publishJson["Successful"] == false) {
-    core.error(
-      `Errors publishing ${entityType}: ${publishJson["Messages"].join(", ")}`
+    throw err(
+      `Errors publishing ${entityType}: ${publishJson["Messages"].join(", ")}`,
+      true
     );
-    return false;
   }
 
   core.info(`Success: Published ${entityType} ${graphId}`);
@@ -86,7 +77,7 @@ export const publishDocument = async (
 /* ---------------
 - RUN THE ACTION -
 --------------- */
-export const run = async () => {
+const runInternal = async () => {
   core.info(decorateInfoHeader("Launching Credential Registry Publish Action"));
 
   // Get inputs and validate them
@@ -94,27 +85,27 @@ export const run = async () => {
   const registryEnv = core.getInput("registry_env") as RegistryEnvironment;
   const registryBaseUrl = RegistryBaseUrls[registryEnv];
   if (!registryBaseUrl) {
-    core.error(
-      'Invalid registry environment. Must be one of "sandbox", "staging", or "production".'
+    throw err(
+      'Invalid registry environment. Must be one of "sandbox", "staging", or "production".',
+      true
     );
-    return;
   }
   core.info(`Selected ${registryEnv} environment.`);
 
   const registryApiKey = core.getInput("registry_api_key");
   if (!registryApiKey) {
-    core.error(
-      "Invalid registry_api_key input. You must provide a registry API key."
+    throw err(
+      "Invalid registry_api_key input. You must provide a registry API key.",
+      true
     );
-    return;
   }
 
   const registryOrgCtid = core.getInput("organization_ctid");
   if (!registryOrgCtid) {
-    core.error(
-      "Invalid organization_ctid input. You must provide a CTID of the Registry organization to publish to."
+    throw err(
+      "Invalid organization_ctid input. You must provide a CTID of the Registry organization to publish to.",
+      true
     );
-    return;
   }
 
   const dryRun = core.getInput("dry_run") === "true";
@@ -153,7 +144,7 @@ export const run = async () => {
       redirect: "follow",
     });
     if (!response.ok) {
-      core.error(`URL ${url} returned status ${response.status}.`);
+      throw err(`URL ${url} returned status ${response.status}.`, true);
     } else {
       const json = await response.json();
       if (!json)
@@ -245,7 +236,7 @@ export const run = async () => {
     const currentEntity = entityStore.get(entityId);
     if (typeof currentEntity?.entity["ceterms:ctid"] !== "string") {
       core.error(
-        `Organization ${entityId} does not have a usable CTID. It will not be published.`
+        `Processed entity from ${currentEntity.entity["ceterms:sameAs"]} does not have a usable CTID. It will not be published.`
       );
     } else {
       const graphDocument = await extractGraphForEntity(
@@ -265,9 +256,24 @@ export const run = async () => {
 
       if (publishResult !== true) {
         core.info(`Failed publication detected. Exiting...`);
+        core.setFailed(
+          "One or more resources failed to publish. See logs for details."
+        );
         break;
       }
     }
   }
   core.info(decorateInfoHeader("PUBLICATION COMPLETE"));
+};
+
+export const run = async () => {
+  try {
+    await runInternal();
+  } catch (error) {
+    if (error instanceof ActionError) handleError(error);
+    else {
+      core.error(error);
+      core.setFailed(error.message);
+    }
+  }
 };

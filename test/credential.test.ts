@@ -1,17 +1,12 @@
 import * as dotenv from "dotenv";
 import * as sinon from "sinon";
-import * as core from "@actions/core";
+import * as errors from "../src/error";
 import { httpClient } from "../src/http";
 import { describe, it } from "mocha";
 import expect from "expect.js";
 
-import { run } from "../src/runner";
 import { RegistryConfig } from "../src/types";
-import {
-  processEntity,
-  entityStore,
-  extractGraphForEntity,
-} from "../src/graphs";
+import { processEntity, entityStore } from "../src/graphs";
 
 // Loads inputs as env vars from .env file, so that they're available to core.getInput() calls
 dotenv.config();
@@ -48,15 +43,21 @@ describe("Credential", () => {
   });
 
   it("should produce an error on missing CTID", async function () {
-    const errorSpy = sinon.spy(core, "error");
     const entity = {
       "@context": "https://credreg.net/ctdl/schema/context/json",
       "@id": "http://example.com/credential/1",
       "@type": "ceterms:Badge",
     };
-    await processEntity(entity, defaultRegistryConfig);
-    sinon.assert.calledWithMatch(errorSpy, sinon.match(/CTID/));
-    errorSpy.restore();
+    let errorThrown = false;
+    try {
+      await processEntity(entity, defaultRegistryConfig);
+    } catch (e) {
+      expect(e).to.be.a(errors.ActionError);
+      expect(e.message.includes("CTID")).to.be(true);
+      errorThrown = true;
+    } finally {
+      expect(errorThrown).to.be(true);
+    }
   });
 
   it("should process a blank node identifier for a QACredentialOrganization", async function () {
@@ -128,9 +129,6 @@ describe("Credential", () => {
             "en-US":
               "The online Cyber Security program places a strong emphasis on the identification, analysis, mitigation, and effective communication of risks associated with cyber systems, employing a range of tools, techniques, and technologies.",
           },
-          "ceterms:targetLearningOpportunity": [
-            "https://credentialengine.github.io/credential-registry-ingest-examples/LearningProgram/2/LearningProgram-2.json",
-          ],
         },
       ],
     };

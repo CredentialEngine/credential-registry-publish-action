@@ -16,6 +16,7 @@ import {
   extractCtidFromUrl,
   replaceIdWithRegistryId,
 } from "./utils";
+import { err } from "./error";
 
 interface StoreEntity {
   fetched: boolean;
@@ -171,10 +172,10 @@ const fetchAndRegisterEntity = async (
       // if the fetched entity does not have the right context, express an error and return
       // In the future, we can JSON-LD compact it into the expected context before continuing
       // But we'll have to check to make sure the language maps and handle [value] => value transforms.
-      core.error(
-        `Error fetching ${entityUrl}: the fetched entity does not have the expected CTDL context.`
+      throw err(
+        `Error fetching ${entityUrl}: the fetched entity does not have the expected CTDL context.`,
+        true
       );
-      return;
     }
     // if the fetched entity does not have a CTID, Register it as a blank node.
     if (!jsonData["ceterms:ctid"]) {
@@ -197,10 +198,10 @@ const fetchAndRegisterEntity = async (
     }
     // if the fetched entity does not have an @id or it is not the same as propValue, express an error and return
     if (jsonData["@id"] != entityUrl) {
-      core.error(
-        `Error fetching ${entityUrl}: the fetched entity does not have an @id or it is not the same as the requested URL.`
+      throw err(
+        `Error fetching ${entityUrl}: the fetched entity does not have an @id or it is not the same as the requested URL.`,
+        true
       );
-      return;
     }
 
     const newEntity = entityStore.registerEntity(jsonData, true, rc, from);
@@ -274,8 +275,7 @@ export const processEntity = async (
     return entity;
 
   if (!entity["ceterms:ctid"] && !entityId.startsWith("_:")) {
-    core.error(`No CTID found in entity ${entityId}`);
-    return;
+    throw err(`No CTID found in entity ${entityId}`);
   }
 
   let doc = {
@@ -355,12 +355,11 @@ export const processEntity = async (
 
           // Case A: If it is a declared but unsupported value for this property, throw an error.
           if (!inRangeTypesForProp.includes(nodeType)) {
-            core.error(
+            throw err(
               `Error: invalid value of type ${nodeType} for property ${prop} ${decorateIndex(
                 index
               )} in entity ${entityId}`
             );
-            return;
           }
 
           // Case B: It is a ConditionProfile, which is a special case that is always embedded
