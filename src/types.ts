@@ -20,15 +20,6 @@ export interface RegistryConfig {
   dryRun: boolean;
 }
 
-export interface DocumentMetadata {
-  url: string;
-  isGraph: boolean;
-  errors: string[];
-  entityTypes: { [key: string]: string[] };
-  entitiesByType: { [key: string]: string[] };
-  ctidsById: { [key: string]: string };
-}
-
 export interface GraphDocument {
   "@graph": any[];
   "@context": string;

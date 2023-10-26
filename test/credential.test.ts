@@ -129,7 +129,7 @@ describe("Credential", () => {
               "The online Cyber Security program places a strong emphasis on the identification, analysis, mitigation, and effective communication of risks associated with cyber systems, employing a range of tools, techniques, and technologies.",
           },
           "ceterms:targetLearningOpportunity": [
-            "https://credentialengineregistry.org/resources/ce-133b8ac4-1ae6-41e4-8516-cce7830d965f",
+            "https://credentialengine.github.io/credential-registry-ingest-examples/LearningProgram/2/LearningProgram-2.json",
           ],
         },
       ],

@@ -3,7 +3,7 @@ import { context } from "@actions/github";
 import { httpClient } from "./http";
 
 import { CredentialSubtypes } from "./credential";
-import { arrayOf } from "./utils";
+import { arrayOf, decorateInfoHeader } from "./utils";
 import {
   RegistryEnvironment,
   RegistryBaseUrls,
@@ -14,8 +14,9 @@ import {
   entityStore,
   extractGraphForEntity,
   processEntity,
-  indexDocuments,
   getOrderedEntitiesToPublish,
+  documentIsCtdlJsonEntity,
+  documentIsAGraph,
 } from "./graphs";
 import {
   topLevelClassURIs,
@@ -49,7 +50,6 @@ export const publishDocument = async (
     return false;
   }
 
-  core.info(`Publishing to ${publishUrl}`);
   const publishResponse = await httpClient.fetch(publishUrl, {
     method: "POST",
     headers: {
@@ -79,7 +79,7 @@ export const publishDocument = async (
     return false;
   }
 
-  core.info(`Published ${entityType} ${graphId} with CTID ${ctid}.`);
+  core.info(`Success: Published ${entityType} ${graphId}`);
   return true;
 };
 
@@ -87,7 +87,7 @@ export const publishDocument = async (
 - RUN THE ACTION -
 --------------- */
 export const run = async () => {
-  core.info("Launching Credential Registry Publish Action");
+  core.info(decorateInfoHeader("Launching Credential Registry Publish Action"));
 
   // Get inputs and validate them
   const urls = core.getInput("urls");
@@ -156,34 +156,44 @@ export const run = async () => {
       core.error(`URL ${url} returned status ${response.status}.`);
     } else {
       const json = await response.json();
-      if (json) {
-        documents[url] = json;
+      if (!json)
+        core.error(
+          `URL ${url} did not return readable JSON data. It will be skipped.`
+        );
+      else if (
+        documentIsCtdlJsonEntity(json, url) &&
+        documentIsAGraph(json, url)
+      ) {
+        // Process each entity in the graph if we have a graph. The convention is that if a graph appears in a source
+        // URL document, it is done to reduce the amount of URL fetching to be done by the action, and thus is trusted.
+        // as if it was fetched from its primary URL.
+        if (json["@graph"].length) {
+          for (const entity of json["@graph"]) {
+            entityStore.registerEntity(
+              entity,
+              true,
+              registryConfig,
+              url,
+              false
+            ); // register the entity in unprocessed state
+          }
+          await processEntity(json["@graph"][0], registryConfig, url);
+        }
+      } else if (documentIsCtdlJsonEntity(json, url)) {
+        // Process just the root single entity if we have a single entity.
+        await processEntity(json, registryConfig, url);
       } else {
         core.error(
-          `URL ${url} did not return JSON-formatted data. It will be skipped.`
+          `URL ${url} did not return CTDL JSON-LD data. It will be skipped.`
         );
       }
     }
   }
 
-  const { metadata, urlsForNode } = indexDocuments(documents);
-  core.info(JSON.stringify(metadata, null, 2));
-
-  // For documents of supported types found in a graph, publish the document.
-  for (const url of urlsArray) {
-    const documentMetadata = metadata[url];
-    const thisDocument = documents[url];
-    if (!documentMetadata.isGraph) {
-      await processEntity(thisDocument, registryConfig);
-    } else {
-      // For each entity in the graph, register it in the entity store
-      for (const entity of thisDocument["@graph"]) {
-        await processEntity(entity, registryConfig, url);
-      }
-    }
-  }
-
-  // Process entities one layer deep
+  // Find entities that haven't been fully processed and process them.
+  // We don't recurse, we only need to go one layer deep, because we just
+  // need to ensure the links are correct within docs that will appear in a graph
+  // from one of our primary URLs.
   const entitiesToProcess = Object.keys(entityStore.entities).filter(
     (entityId) => !entityStore.entities[entityId].processed
   );
@@ -196,16 +206,41 @@ export const run = async () => {
   // Organization and subclasses first, then Credential and subclasses, then everything else
   const orderedEntitiesToPublish = getOrderedEntitiesToPublish(urlsArray);
 
-  core.info("------------ ENTITIES TO PUBLISH ------------");
+  core.info(decorateInfoHeader("ENTITIES TO PUBLISH"));
   orderedEntitiesToPublish.forEach((e) => {
     core.info(
       `${e} <= ${Object.values(entityStore.sameAsIndex).find((v) => v === e)}`
     );
   });
 
+  const topLevelEntitiesNotPublished = Object.values(entityStore.entities)
+    .filter(
+      (e) =>
+        !orderedEntitiesToPublish.includes(e.entity["@id"]) &&
+        topLevelClassURIs.includes(e.entity["@type"])
+    )
+    .map(
+      (e) =>
+        `${e.entity["@id"]} <= ${
+          e.entity["ceterms:sameAs"]
+            ? arrayOf(e.entity["ceterms:sameAs"])[0]
+            : ""
+        } (${e.entity["@type"]})`
+    );
+  if (topLevelEntitiesNotPublished.length) {
+    core.info(
+      decorateInfoHeader("REFERENCED ENTITIES NOT TO BE PUBLISHED THIS RUN")
+    );
+    core.info(
+      "Ensure these source URLs are included in a different workflow of the publish action to publish the latest version of these entities."
+    );
+    topLevelEntitiesNotPublished.forEach((e) => {
+      core.info(e);
+    });
+  }
   // Extract a graph for each document, determine if it has a CTID, and publish
   // to the appropriate endpoint for the class
-  core.info("------------ BEGINNING PUBLICATION ------------");
+  core.info(decorateInfoHeader("BEGINNING PUBLICATION"));
   for (const entityId of orderedEntitiesToPublish) {
     const currentEntity = entityStore.get(entityId);
     if (typeof currentEntity?.entity["ceterms:ctid"] !== "string") {
@@ -234,5 +269,5 @@ export const run = async () => {
       }
     }
   }
-  core.info("------------ PUBLICATION COMPLETE ------------");
+  core.info(decorateInfoHeader("PUBLICATION COMPLETE"));
 };

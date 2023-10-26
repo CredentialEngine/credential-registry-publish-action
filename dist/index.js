@@ -20933,7 +20933,7 @@ var __awaiter = (undefined && undefined.__awaiter) || function (thisArg, _argume
 
 const httpClient = {
     fetch: (url, options) => __awaiter(void 0, void 0, void 0, function* () {
-        console.log(`{http client} Fetching ${url}`);
+        console.log(`{http client} Requesting ${(options === null || options === void 0 ? void 0 : options.method) ? "(" + options.method + ") " : ""}${url}`);
         return src(url, options);
     }),
 };
@@ -20948,6 +20948,45 @@ const AssistantBaseUrls = {
     sandbox: "https://sandbox.credentialengine.org/assistant",
     staging: "https://staging.credentialengine.org/assistant",
     production: "https://credentialengine.org/assistant",
+};
+
+;// CONCATENATED MODULE: ./src/utils.ts
+
+const arrayOf = (type) => {
+    if (Array.isArray(type)) {
+        return type;
+    }
+    return [type];
+};
+const replaceIdWithRegistryId = (entity, registryConfig) => {
+    var _a;
+    const id = entity["@id"];
+    const ctidBasedId = `${registryConfig.registryBaseUrl}/resources/${entity["ceterms:ctid"]}`;
+    if (!id || !entity["ceterms:ctid"] || id == ctidBasedId)
+        return entity;
+    return Object.assign(Object.assign(Object.assign({}, entity), (entity["ceterms:ctid"] ? { "@id": ctidBasedId } : {})), (id.startsWith("_:")
+        ? {}
+        : { "ceterms:sameAs": [...arrayOf((_a = entity["ceterms:sameAs"]) !== null && _a !== void 0 ? _a : []), id] }));
+};
+const decorateIndex = (index) => index > 0 ? `[${index}]` : "";
+/**
+ * Generate a decorative header line for logs, of length 80 padded with "=" characters
+ * @param header the text to display in the header
+ * @returns
+ */
+const decorateInfoHeader = (header) => {
+    const padding = header.length > 78 ? 0 : (78 - header.length) / 2;
+    return `\n${"=".repeat(padding)} ${header} ${"=".repeat(padding)}`;
+};
+const extractCtidFromUrl = (url) => {
+    // If on any Registry Environment, this is a resource URL, extract the CTID
+    return Object.values(RegistryBaseUrls).find((env) => {
+        const matcher = new RegExp(`${env}/resources/(ce-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})`, "i");
+        const match = url.match(matcher);
+        if (match) {
+            return match[1];
+        }
+    });
 };
 
 // EXTERNAL MODULE: ./node_modules/uuid/dist/index.js
@@ -21129,36 +21168,6 @@ const classIsDescendantOf = (c, ancestor) => {
     if (parent === ancestor)
         return true;
     return classIsDescendantOf(parent, ancestor);
-};
-
-;// CONCATENATED MODULE: ./src/utils.ts
-
-const arrayOf = (type) => {
-    if (Array.isArray(type)) {
-        return type;
-    }
-    return [type];
-};
-const replaceIdWithRegistryId = (entity, registryConfig) => {
-    var _a;
-    const id = entity["@id"];
-    const ctidBasedId = `${registryConfig.registryBaseUrl}/resources/${entity["ceterms:ctid"]}`;
-    if (!id || !entity["ceterms:ctid"] || id == ctidBasedId)
-        return entity;
-    return Object.assign(Object.assign(Object.assign({}, entity), (entity["ceterms:ctid"] ? { "@id": ctidBasedId } : {})), (id.startsWith("_:")
-        ? {}
-        : { "ceterms:sameAs": [...arrayOf((_a = entity["ceterms:sameAs"]) !== null && _a !== void 0 ? _a : []), id] }));
-};
-const decorateIndex = (index) => index > 0 ? `[${index}]` : "";
-const extractCtidFromUrl = (url) => {
-    // If on any Registry Environment, this is a resource URL, extract the CTID
-    return Object.values(RegistryBaseUrls).find((env) => {
-        const matcher = new RegExp(`${env}/resources/(ce-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})`, "i");
-        const match = url.match(matcher);
-        if (match) {
-            return match[1];
-        }
-    });
 };
 
 ;// CONCATENATED MODULE: ./src/graphs.ts
@@ -21457,15 +21466,26 @@ const extractGraphForEntity = (entityId, rc) => {
         "@graph": [entity.entity, ...referencedEntities],
     };
 };
+/**
+ * Get a list of top level entities that will be published, ordered by type-based hierarchy (Orgs, Credentials, then
+ * Other).
+ * @param {string[]} urlsArray - A list of the URLs that the user has specified to publish. The primary entity found at
+ * this URL or each primary entity that was in a graph sourced from it will be selected if it is eligible for
+ * publishing.
+ * @returns {string[]}
+ */
 const getOrderedEntitiesToPublish = (urlsArray) => {
-    const entityIds = Object.values(entityStore.entities)
+    let entityIds = Object.values(entityStore.entities)
         .filter((entity) => {
         var _a;
-        // Entity @id is in urlsArray or a sameAs value referencing this entity is in urlsArray
+        // Return entities registered under the original url fetched (unexpected)
+        // OR under a sameAs reference where the original appears in sameAs
+        // OR where an entity is registered as having come from a requested source URL (in the graph)
         const entityId = entity.entity["@id"];
         const sameAs = arrayOf((_a = entity.entity["ceterms:sameAs"]) !== null && _a !== void 0 ? _a : []);
         return (urlsArray.includes(entityId) ||
-            sameAs.some((url) => urlsArray.includes(url)));
+            sameAs.some((url) => urlsArray.includes(url)) ||
+            (entity.sourceUrl && urlsArray.includes(entity.sourceUrl)));
     })
         .filter((entity) => {
         var _a;
@@ -21495,85 +21515,26 @@ const getOrderedEntitiesToPublish = (urlsArray) => {
         .map((entity) => entity.entity["@id"]);
     return entityIds;
 };
-const validateGraph = (url, responseData) => {
-    // validate context matches CTDL expectation:
-    // https://credreg.net/ctdl/schema/context/json
-    if (!responseData["@context"]) {
-        core.error(`No @context found in document ${url}`);
+const documentIsCtdlJsonEntity = (entity, sourceUrl) => {
+    if (!entity["@context"]) {
+        core.error(`No @context found in document from ${sourceUrl}`);
         return false;
     }
-    const contextArray = arrayOf(responseData["@context"]);
-    if (contextArray.length === 0 ||
-        contextArray.length > 1 ||
-        contextArray[0] !== "https://credreg.net/ctdl/schema/context/json") {
-        core.error(`URL ${url} did not return expected @context. Use https://credreg.net/ctdl/schema/context/json`);
-        return false;
-    }
-    if (!responseData["@graph"]) {
+    else if (entity["@context"] !== "https://credreg.net/ctdl/schema/context/json") {
+        core.error(`Unexpected JSON-LD context in document from ${sourceUrl} - Use "https://credreg.net/ctdl/schema/context/json"`);
         return false;
     }
     return true;
 };
-const indexDocuments = (documents) => {
-    // Index the IDs and types of each entity in the @graph of each document
-    let metadata = {};
-    // Nodes identifies the document URLs in which the node is represented in the graph.
-    let urlsForNode = {};
-    // For each document, validate that it is a graph, and index the value of the @type property for
-    // each entity as DocumentMetadata
-    Object.keys(documents).forEach((url) => {
-        const responseData = documents[url];
-        let graph = [];
-        let ctidsById = {};
-        let isGraph = false;
-        if (validateGraph(url, responseData)) {
-            isGraph = true;
-            graph = arrayOf(responseData["@graph"]);
-        }
-        else if (typeof responseData === "object" && responseData !== null) {
-            graph = [responseData];
-        }
-        let entitiesByType = {};
-        // This makes the assumption that if the same node appears in multiple graphs, any one of the
-        // graphs will contain all of the types for that node.
-        let entityTypes = {};
-        graph.forEach((entity) => {
-            // If the URL of this document does not yet appear in the array of URLs that contain this
-            // node, index it there
-            if (!urlsForNode[entity["@id"]]) {
-                urlsForNode[entity["@id"]] = [url];
-            }
-            else if (!urlsForNode[entity["@id"]].includes(url)) {
-                urlsForNode[entity["@id"]].push(url);
-            }
-            const type = entity["@type"];
-            if (type) {
-                const typeArray = arrayOf(type);
-                entityTypes[entity["@id"]] = typeArray;
-                if (entity["ceterms:ctid"]) {
-                    ctidsById[entity["@id"]] = entity["ceterms:ctid"];
-                }
-                typeArray.forEach((et) => {
-                    // Register this entity @id in the appropriate entitiesByType
-                    if (!entitiesByType[et]) {
-                        entitiesByType[et] = [entity["@id"]];
-                    }
-                    else {
-                        entitiesByType[et].push(entity["@id"]);
-                    }
-                });
-            }
-        });
-        metadata[url] = {
-            url,
-            isGraph: isGraph,
-            errors: [],
-            entityTypes,
-            entitiesByType,
-            ctidsById,
-        };
-    });
-    return { metadata, urlsForNode };
+const documentIsAGraph = (entity, sourceUrl) => {
+    var _a;
+    if (!entity["@graph"]) {
+        return false;
+    }
+    else if (arrayOf((_a = entity["@graph"]) !== null && _a !== void 0 ? _a : [{}]).some((e) => !e["@id"])) {
+        core.error(`No @id found in an entity in the @graph loaded from ${sourceUrl}`);
+    }
+    return true;
 };
 
 ;// CONCATENATED MODULE: ./src/runner.ts
@@ -21591,6 +21552,7 @@ var runner_awaiter = (undefined && undefined.__awaiter) || function (thisArg, _a
 
 
 
+
 const publishDocument = (graphDocument, registryConfig, classMetadata) => runner_awaiter(void 0, void 0, void 0, function* () {
     const ctid = graphDocument["@graph"][0]["ceterms:ctid"];
     const entityType = graphDocument["@graph"][0]["@type"];
@@ -21602,7 +21564,6 @@ const publishDocument = (graphDocument, registryConfig, classMetadata) => runner
         core.info(JSON.stringify(graphDocument, null, 2));
         return false;
     }
-    core.info(`Publishing to ${publishUrl}`);
     const publishResponse = yield httpClient.fetch(publishUrl, {
         method: "POST",
         headers: {
@@ -21624,14 +21585,14 @@ const publishDocument = (graphDocument, registryConfig, classMetadata) => runner
         core.error(`Errors publishing ${entityType}: ${publishJson["Messages"].join(", ")}`);
         return false;
     }
-    core.info(`Published ${entityType} ${graphId} with CTID ${ctid}.`);
+    core.info(`Success: Published ${entityType} ${graphId}`);
     return true;
 });
 /* ---------------
 - RUN THE ACTION -
 --------------- */
 const run = () => runner_awaiter(void 0, void 0, void 0, function* () {
-    core.info("Launching Credential Registry Publish Action");
+    core.info(decorateInfoHeader("Launching Credential Registry Publish Action"));
     // Get inputs and validate them
     const urls = core.getInput("urls");
     const registryEnv = core.getInput("registry_env");
@@ -21685,31 +21646,33 @@ const run = () => runner_awaiter(void 0, void 0, void 0, function* () {
         }
         else {
             const json = yield response.json();
-            if (json) {
-                documents[url] = json;
+            if (!json)
+                core.error(`URL ${url} did not return readable JSON data. It will be skipped.`);
+            else if (documentIsCtdlJsonEntity(json, url) &&
+                documentIsAGraph(json, url)) {
+                // Process each entity in the graph if we have a graph. The convention is that if a graph appears in a source
+                // URL document, it is done to reduce the amount of URL fetching to be done by the action, and thus is trusted.
+                // as if it was fetched from its primary URL.
+                if (json["@graph"].length) {
+                    for (const entity of json["@graph"]) {
+                        entityStore.registerEntity(entity, true, registryConfig, url, false); // register the entity in unprocessed state
+                    }
+                    yield processEntity(json["@graph"][0], registryConfig, url);
+                }
+            }
+            else if (documentIsCtdlJsonEntity(json, url)) {
+                // Process just the root single entity if we have a single entity.
+                yield processEntity(json, registryConfig, url);
             }
             else {
-                core.error(`URL ${url} did not return JSON-formatted data. It will be skipped.`);
+                core.error(`URL ${url} did not return CTDL JSON-LD data. It will be skipped.`);
             }
         }
     }
-    const { metadata, urlsForNode } = indexDocuments(documents);
-    core.info(JSON.stringify(metadata, null, 2));
-    // For documents of supported types found in a graph, publish the document.
-    for (const url of urlsArray) {
-        const documentMetadata = metadata[url];
-        const thisDocument = documents[url];
-        if (!documentMetadata.isGraph) {
-            yield processEntity(thisDocument, registryConfig);
-        }
-        else {
-            // For each entity in the graph, register it in the entity store
-            for (const entity of thisDocument["@graph"]) {
-                yield processEntity(entity, registryConfig, url);
-            }
-        }
-    }
-    // Process entities one layer deep
+    // Find entities that haven't been fully processed and process them.
+    // We don't recurse, we only need to go one layer deep, because we just
+    // need to ensure the links are correct within docs that will appear in a graph
+    // from one of our primary URLs.
     const entitiesToProcess = Object.keys(entityStore.entities).filter((entityId) => !entityStore.entities[entityId].processed);
     for (const entityId of entitiesToProcess) {
         const entity = entityStore.get(entityId);
@@ -21718,13 +21681,26 @@ const run = () => runner_awaiter(void 0, void 0, void 0, function* () {
     // marshall entities to publish and order their ids into orderedEntitiesToPublish, sorting them by type with
     // Organization and subclasses first, then Credential and subclasses, then everything else
     const orderedEntitiesToPublish = getOrderedEntitiesToPublish(urlsArray);
-    core.info("------------ ENTITIES TO PUBLISH ------------");
+    core.info(decorateInfoHeader("ENTITIES TO PUBLISH"));
     orderedEntitiesToPublish.forEach((e) => {
         core.info(`${e} <= ${Object.values(entityStore.sameAsIndex).find((v) => v === e)}`);
     });
+    const topLevelEntitiesNotPublished = Object.values(entityStore.entities)
+        .filter((e) => !orderedEntitiesToPublish.includes(e.entity["@id"]) &&
+        topLevelClassURIs.includes(e.entity["@type"]))
+        .map((e) => `${e.entity["@id"]} <= ${e.entity["ceterms:sameAs"]
+        ? arrayOf(e.entity["ceterms:sameAs"])[0]
+        : ""} (${e.entity["@type"]})`);
+    if (topLevelEntitiesNotPublished.length) {
+        core.info(decorateInfoHeader("REFERENCED ENTITIES NOT TO BE PUBLISHED THIS RUN"));
+        core.info("Ensure these source URLs are included in a different workflow of the publish action to publish the latest version of these entities.");
+        topLevelEntitiesNotPublished.forEach((e) => {
+            core.info(e);
+        });
+    }
     // Extract a graph for each document, determine if it has a CTID, and publish
     // to the appropriate endpoint for the class
-    core.info("------------ BEGINNING PUBLICATION ------------");
+    core.info(decorateInfoHeader("BEGINNING PUBLICATION"));
     for (const entityId of orderedEntitiesToPublish) {
         const currentEntity = entityStore.get(entityId);
         if (typeof (currentEntity === null || currentEntity === void 0 ? void 0 : currentEntity.entity["ceterms:ctid"]) !== "string") {
@@ -21743,7 +21719,7 @@ const run = () => runner_awaiter(void 0, void 0, void 0, function* () {
             }
         }
     }
-    core.info("------------ PUBLICATION COMPLETE ------------");
+    core.info(decorateInfoHeader("PUBLICATION COMPLETE"));
 });
 
 ;// CONCATENATED MODULE: ./src/index.ts

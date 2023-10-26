@@ -272,4 +272,37 @@ describe("Get ordered entities to publish", () => {
     expect(ordered[0]).to.eql(entities.c["@id"]); // org first
     expect(ordered[3]).to.eql(entities.d["@id"]); // credentials in the middle, lopp last
   });
+
+  it("should return entities sourced from a particular input graph", function () {
+    const entities = {
+      a: basicEntity({ "@type": "ceterms:Credential" }),
+      b: basicEntity({ "@type": "ceterms:BachelorDegree" }),
+      c: basicEntity({ "@type": "ceterms:Organization" }),
+      d: basicEntity({ "@type": "ceterms:LearningOpportunityProfile" }),
+    };
+    entityStore.registerEntity(
+      entities.a,
+      false,
+      defaultRC,
+      "https://example.com/graph/1"
+    );
+    entityStore.registerEntity(entities.b, false, defaultRC);
+    entityStore.registerEntity(
+      entities.c,
+      false,
+      defaultRC,
+      "https://example.com/graph/1"
+    );
+    entityStore.registerEntity(
+      entities.d,
+      false,
+      defaultRC,
+      "https://example.com/graph/1"
+    );
+
+    const ordered = getOrderedEntitiesToPublish([
+      "https://example.com/graph/1",
+    ]);
+    expect(ordered.length).to.eql(3);
+  });
 });

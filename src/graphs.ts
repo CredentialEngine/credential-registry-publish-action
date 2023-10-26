@@ -1,12 +1,7 @@
 import * as core from "@actions/core";
 import { httpClient } from "./http";
 import { v4 as uuidv4 } from "uuid";
-import {
-  BasicEntity,
-  DocumentMetadata,
-  GraphDocument,
-  RegistryConfig,
-} from "./types";
+import { BasicEntity, GraphDocument, RegistryConfig } from "./types";
 import {
   classIsDescendantOf,
   getConditionProfilePointerPropertiesForClass,
@@ -502,15 +497,26 @@ export const extractGraphForEntity = (
   };
 };
 
+/**
+ * Get a list of top level entities that will be published, ordered by type-based hierarchy (Orgs, Credentials, then
+ * Other).
+ * @param {string[]} urlsArray - A list of the URLs that the user has specified to publish. The primary entity found at
+ * this URL or each primary entity that was in a graph sourced from it will be selected if it is eligible for
+ * publishing.
+ * @returns {string[]}
+ */
 export const getOrderedEntitiesToPublish = (urlsArray) => {
-  const entityIds = Object.values(entityStore.entities)
+  let entityIds = Object.values(entityStore.entities)
     .filter((entity) => {
-      // Entity @id is in urlsArray or a sameAs value referencing this entity is in urlsArray
+      // Return entities registered under the original url fetched (unexpected)
+      // OR under a sameAs reference where the original appears in sameAs
+      // OR where an entity is registered as having come from a requested source URL (in the graph)
       const entityId = entity.entity["@id"];
       const sameAs = arrayOf(entity.entity["ceterms:sameAs"] ?? []);
       return (
         urlsArray.includes(entityId) ||
-        sameAs.some((url) => urlsArray.includes(url))
+        sameAs.some((url) => urlsArray.includes(url)) ||
+        (entity.sourceUrl && urlsArray.includes(entity.sourceUrl))
       );
     })
     .filter((entity) => {
@@ -539,95 +545,31 @@ export const getOrderedEntitiesToPublish = (urlsArray) => {
   return entityIds;
 };
 
-export const validateGraph = (url: string, responseData: object): boolean => {
-  // validate context matches CTDL expectation:
-  // https://credreg.net/ctdl/schema/context/json
-  if (!responseData["@context"]) {
-    core.error(`No @context found in document ${url}`);
+export const documentIsCtdlJsonEntity = (
+  entity: any,
+  sourceUrl: string
+): boolean => {
+  if (!entity["@context"]) {
+    core.error(`No @context found in document from ${sourceUrl}`);
     return false;
-  }
-
-  const contextArray = arrayOf(responseData["@context"]);
-  if (
-    contextArray.length === 0 ||
-    contextArray.length > 1 ||
-    contextArray[0] !== "https://credreg.net/ctdl/schema/context/json"
+  } else if (
+    entity["@context"] !== "https://credreg.net/ctdl/schema/context/json"
   ) {
     core.error(
-      `URL ${url} did not return expected @context. Use https://credreg.net/ctdl/schema/context/json`
+      `Unexpected JSON-LD context in document from ${sourceUrl} - Use "https://credreg.net/ctdl/schema/context/json"`
     );
     return false;
   }
-
-  if (!responseData["@graph"]) {
-    return false;
-  }
-
   return true;
 };
 
-export const indexDocuments = (documents: { [key: string]: any }) => {
-  // Index the IDs and types of each entity in the @graph of each document
-  let metadata: { [key: string]: DocumentMetadata } = {};
-
-  // Nodes identifies the document URLs in which the node is represented in the graph.
-  let urlsForNode: { [key: string]: string[] } = {};
-
-  // For each document, validate that it is a graph, and index the value of the @type property for
-  // each entity as DocumentMetadata
-  Object.keys(documents).forEach((url) => {
-    const responseData = documents[url];
-    let graph: any[] = [];
-    let ctidsById: { [key: string]: string } = {};
-    let isGraph = false;
-    if (validateGraph(url, responseData)) {
-      isGraph = true;
-      graph = arrayOf(responseData["@graph"]);
-    } else if (typeof responseData === "object" && responseData !== null) {
-      graph = [responseData];
-    }
-
-    let entitiesByType: { [key: string]: string[] } = {};
-    // This makes the assumption that if the same node appears in multiple graphs, any one of the
-    // graphs will contain all of the types for that node.
-    let entityTypes: { [key: string]: string[] } = {};
-
-    graph.forEach((entity) => {
-      // If the URL of this document does not yet appear in the array of URLs that contain this
-      // node, index it there
-      if (!urlsForNode[entity["@id"]]) {
-        urlsForNode[entity["@id"]] = [url];
-      } else if (!urlsForNode[entity["@id"]].includes(url)) {
-        urlsForNode[entity["@id"]].push(url);
-      }
-
-      const type = entity["@type"];
-      if (type) {
-        const typeArray = arrayOf(type) as string[];
-        entityTypes[entity["@id"]] = typeArray;
-        if (entity["ceterms:ctid"]) {
-          ctidsById[entity["@id"]] = entity["ceterms:ctid"];
-        }
-        typeArray.forEach((et) => {
-          // Register this entity @id in the appropriate entitiesByType
-          if (!entitiesByType[et]) {
-            entitiesByType[et] = [entity["@id"]];
-          } else {
-            entitiesByType[et].push(entity["@id"]);
-          }
-        });
-      }
-    });
-
-    metadata[url] = {
-      url,
-      isGraph: isGraph,
-      errors: [],
-      entityTypes,
-      entitiesByType,
-      ctidsById,
-    };
-  });
-
-  return { metadata, urlsForNode };
+export const documentIsAGraph = (entity: any, sourceUrl: string): boolean => {
+  if (!entity["@graph"]) {
+    return false;
+  } else if (arrayOf(entity["@graph"] ?? [{}]).some((e) => !e["@id"])) {
+    core.error(
+      `No @id found in an entity in the @graph loaded from ${sourceUrl}`
+    );
+  }
+  return true;
 };

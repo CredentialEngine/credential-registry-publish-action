@@ -27,6 +27,16 @@ export const replaceIdWithRegistryId = (
 export const decorateIndex = (index: number): string =>
   index > 0 ? `[${index}]` : "";
 
+/**
+ * Generate a decorative header line for logs, of length 80 padded with "=" characters
+ * @param header the text to display in the header
+ * @returns
+ */
+export const decorateInfoHeader = (header: string): string => {
+  const padding = header.length > 78 ? 0 : (78 - header.length) / 2;
+  return `\n${"=".repeat(padding)} ${header} ${"=".repeat(padding)}`;
+};
+
 export const extractCtidFromUrl = (url: string): string | undefined => {
   // If on any Registry Environment, this is a resource URL, extract the CTID
   return Object.values(RegistryBaseUrls).find((env) => {
