@@ -1,22 +1,37 @@
 // import * as sinon from "sinon";
 import { describe, it } from "mocha";
 import expect from "expect.js";
+import { v4 as uuidv4 } from "uuid";
 
 import {
   classIsDescendantOf,
   getClassMetadata,
   getTopLevelPointerPropertiesForClass,
 } from "../src/ctdl";
-import { entityStore, extractGraphForEntity } from "../src/graphs";
+import {
+  entityStore,
+  extractGraphForEntity,
+  getOrderedEntitiesToPublish,
+} from "../src/graphs";
 import { RegistryConfig } from "../src/types";
 import { register } from "module";
 
-const defaultRegistryConfigForTests: RegistryConfig = {
+const defaultRC: RegistryConfig = {
   registryBaseUrl: "https://sandbox.credentialengineregistry.org",
   registryEnv: "sandbox",
   registryApiKey: "secret",
   registryOrgCtid: "ce-1234",
   dryRun: false,
+};
+
+const basicEntity = (props: any, rc: RegistryConfig = defaultRC) => {
+  const ctid = props["ceterms:ctid"] ?? `ce-${uuidv4()}`;
+  return {
+    "@id": `${rc.registryBaseUrl}/resources/${ctid}`,
+    "@type": "ceterms:Credential",
+    "ceterms:ctid": ctid,
+    ...props,
+  };
 };
 
 describe("Discovering information about CTDL Classes, Relationships, and API support", () => {
@@ -70,17 +85,27 @@ describe("Discovering information about CTDL Classes, Relationships, and API sup
 });
 
 describe("Entity store manipulation", () => {
+  beforeEach(() => {
+    entityStore.reset();
+  });
+
+  afterEach(() => {
+    entityStore.reset();
+  });
+
   it("should register a new entity", function () {
     // Arrange
-    const id = "http://example.com/credential/1";
+    const id = `${defaultRC.registryBaseUrl}/resources/ce-1234`;
     const entity = {
       "@id": id,
+      "ceterms:ctid": "ce-1234",
       "@type": "ceterms:Credential",
     };
 
     const entity2 = {
-      "@id": "http://example.com/credential/2",
+      "@id": `${defaultRC.registryBaseUrl}/resources/ce-5678`,
       "@type": "ceterms:Credential",
+      "ceterms:ctid": "ce-5678",
       "ceterms:hasPart": {
         "@id": id,
         "@type": "ceterms:Credential",
@@ -88,13 +113,19 @@ describe("Entity store manipulation", () => {
     };
 
     // Act
-    entityStore.registerEntity(entity, true, entity2["@id"]);
+    const stored1 = entityStore.registerEntity(
+      entity,
+      true,
+      defaultRC,
+      entity2["@id"]
+    );
 
     // Assert
     expect(entityStore.get(id)).to.eql({
       fetched: true,
       entity,
       processed: false,
+      sourceUrl: entity2["@id"],
     });
     expect(entityStore.entitiesReferencedBy[entity2["@id"]]).to.eql([
       entity["@id"],
@@ -105,12 +136,12 @@ describe("Entity store manipulation", () => {
 
   it("should fuzzy match an entity with sameAs", function () {
     const entity = {
-      "@id": `${defaultRegistryConfigForTests.registryBaseUrl}/resources/ce-1234`,
+      "@id": `${defaultRC.registryBaseUrl}/resources/ce-1234`,
       "@type": "ceterms:Credential",
       "ceterms:ctid": "ce-1234",
       "ceterms:sameAs": ["https://example.com/organization/1"],
     };
-    entityStore.registerEntity(entity, true);
+    entityStore.registerEntity(entity, true, defaultRC);
     expect(entityStore.get(entity["@id"])).to.not.be(undefined);
     expect(entityStore.get(entity["ceterms:sameAs"][0])).to.be(undefined);
     expect(entityStore.getFuzzy(entity["ceterms:sameAs"][0])).to.not.be(
@@ -120,6 +151,14 @@ describe("Entity store manipulation", () => {
 });
 
 describe("Graph extraction", () => {
+  beforeEach(() => {
+    entityStore.reset();
+  });
+
+  afterEach(() => {
+    entityStore.reset();
+  });
+
   it("should extract the right referenced nodes from a graph", function () {
     // Arrange
     const entities = [
@@ -146,15 +185,25 @@ describe("Graph extraction", () => {
       },
     ];
 
-    entityStore.registerEntity(entities[0], true);
-    entityStore.registerEntity(entities[1], false, entities[0]["@id"]);
-    entityStore.registerEntity(entities[2], false);
-    entityStore.registerEntity(entities[3], false, entities[0]["@id"]);
+    entityStore.registerEntity(entities[0], true, defaultRC);
+    entityStore.registerEntity(
+      entities[1],
+      false,
+      defaultRC,
+      entities[0]["@id"]
+    );
+    entityStore.registerEntity(entities[2], false, defaultRC);
+    entityStore.registerEntity(
+      entities[3],
+      false,
+      defaultRC,
+      entities[0]["@id"]
+    );
 
     // Act
     const extracted = extractGraphForEntity(
       "http://example.com/credential/1",
-      defaultRegistryConfigForTests
+      defaultRC
     );
 
     // Assert
@@ -163,5 +212,64 @@ describe("Graph extraction", () => {
       entities[0]["@id"],
       entities[3]["@id"], // This entity is included because it's not a top-level class.
     ]);
+  });
+});
+
+describe("Get ordered entities to publish", () => {
+  beforeEach(() => {
+    entityStore.reset();
+  });
+
+  afterEach(() => {
+    entityStore.reset();
+  });
+
+  it("should not return an id not in the urls list", function () {
+    const entities = {
+      a: basicEntity({ "@type": "ceterms:Credential" }),
+      b: basicEntity({ "@type": "ceterms:Organization" }),
+    };
+    entityStore.registerEntity(entities.a, false, defaultRC);
+    entityStore.registerEntity(entities.b, false, defaultRC);
+
+    const ordered = getOrderedEntitiesToPublish([entities.a["@id"]]);
+    expect(ordered.length).to.eql(1);
+    expect(ordered[0]).to.eql(entities.a["@id"]);
+  });
+
+  it("should not return an id unless it's a top-level class", function () {
+    const entities = {
+      a: basicEntity({ "@type": "ceterms:Credential" }),
+      b: basicEntity({ "@type": "ceterms:ConditionProfile" }),
+    };
+    entityStore.registerEntity(entities.a, false, defaultRC);
+    entityStore.registerEntity(entities.b, false, defaultRC);
+
+    const ordered = getOrderedEntitiesToPublish([
+      entities.a["@id"],
+      entities.b["@id"],
+    ]);
+    expect(ordered.length).to.eql(1);
+    expect(ordered[0]).to.eql(entities.a["@id"]);
+  });
+
+  it("should return entities in class order", function () {
+    const entities = {
+      a: basicEntity({ "@type": "ceterms:Credential" }),
+      b: basicEntity({ "@type": "ceterms:BachelorDegree" }),
+      c: basicEntity({ "@type": "ceterms:Organization" }),
+      d: basicEntity({ "@type": "ceterms:LearningOpportunityProfile" }),
+    };
+    entityStore.registerEntity(entities.a, false, defaultRC);
+    entityStore.registerEntity(entities.b, false, defaultRC);
+    entityStore.registerEntity(entities.c, false, defaultRC);
+    entityStore.registerEntity(entities.d, false, defaultRC);
+
+    const ordered = getOrderedEntitiesToPublish(
+      Object.values(entities).map((e) => e["@id"])
+    );
+    expect(ordered.length).to.eql(4);
+    expect(ordered[0]).to.eql(entities.c["@id"]); // org first
+    expect(ordered[3]).to.eql(entities.d["@id"]); // credentials in the middle, lopp last
   });
 });

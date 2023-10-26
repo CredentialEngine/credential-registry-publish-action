@@ -6,7 +6,7 @@ export interface FetchWrapper {
 
 export const httpClient: FetchWrapper = {
   fetch: async (url: string, options?: any): Promise<any> => {
-    console.log(`Fetching ${url}`);
+    console.log(`{http client} Fetching ${url}`);
     return fetch(url, options);
   },
 };

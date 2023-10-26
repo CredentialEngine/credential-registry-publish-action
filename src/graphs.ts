@@ -8,13 +8,19 @@ import {
   RegistryConfig,
 } from "./types";
 import {
+  classIsDescendantOf,
   getConditionProfilePointerPropertiesForClass,
   getPropertiesForClass,
   getRangeForProperty,
   getTopLevelPointerPropertiesForClass,
   topLevelClassURIs,
 } from "./ctdl";
-import { arrayOf, decorateIndex, replaceIdWithRegistryId } from "./utils";
+import {
+  arrayOf,
+  decorateIndex,
+  extractCtidFromUrl,
+  replaceIdWithRegistryId,
+} from "./utils";
 
 interface StoreEntity {
   fetched: boolean;
@@ -23,6 +29,7 @@ interface StoreEntity {
     "@type": string;
   };
   processed: boolean;
+  sourceUrl?: string;
 }
 interface EntityStore {
   [key: string]: StoreEntity;
@@ -30,20 +37,42 @@ interface EntityStore {
 
 interface Store {
   entities: EntityStore;
-  get(idx: string): any;
-  getFuzzy(idx: string): any;
+  get(idx: string): undefined | StoreEntity;
+
+  /**
+   * Returns the StoreEntity with the specified ctid, or undefined if not found.
+   * Duplicate ctids on resources of different @id will confuse the system.
+   *
+   * @param {string} ctid - The ctid of the entity to retrieve.
+   * @returns {StoreEntity | undefined} The first StoreEntity with the specified ctid, or undefined if not found.
+   */
+  getByCtid(ctid: string): undefined | StoreEntity;
+
+  /**
+   * Returns the StoreEntity with the specified index, or undefined if not found.
+   * This method performs a fuzzy search for the specified index, allowing for matches by either @id or ceterms:sameAs.
+   * Search order: (1) @id (which is for references of resource urls and blank notes to be pushed to the registry env),
+   * (2) ceterms:sameAs index, (3) by CTID (first found), or (4) undefined if not found.
+   *
+   * @param {string} idx - The index of the entity to retrieve.
+   * @param {string} [ctid] - The ctid of the entity to retrieve, if known.
+   * @returns {StoreEntity | undefined} The StoreEntity with the specified index, or undefined if not found.
+   */
+  getFuzzy(idx: string, ctid?: string): undefined | StoreEntity;
+
   // Index of ceterms:sameAs references in the graph. Key is the original URL, value is the registry URL.
   // This allows only one value for each URL. Maybe in the future, it would be necessary to track multiple.
   sameAsIndex: { [key: string]: string };
 
   // Index of entity references in other graphs. Key is the entity, value is an array of strings of other entities
-  // referenced by the entity.
+  // that are referenced by the entity. (You can find a link to each of these values in the [key] entity somewhere)
   entitiesReferencedBy: { [key: string]: string[] };
   addReference(from: string, to: string): void;
   entitiesThatReference(id: string): string[];
   registerEntity(
     entity: any,
     fetched: boolean,
+    rc: RegistryConfig,
     from?: string,
     processed?: boolean
   ): void;
@@ -54,24 +83,34 @@ export const entityStore: Store = {
   entities: {},
   sameAsIndex: {},
   entitiesReferencedBy: {},
-  get: function (idx: string) {
-    return this.entities[idx];
+  get: function (id: string) {
+    return this.entities[id];
   },
-  getFuzzy: function (idx: string) {
+  getByCtid: function (ctid: string) {
+    return Object.values(this.entities).find(
+      (val: any) => val.entity["ceterms:ctid"] === ctid
+    ) as undefined | StoreEntity;
+  },
+  getFuzzy: function (idx: string, ctid?: string) {
     const idMatch = this.get(idx);
     if (idMatch) return idMatch;
 
-    return Object.values(this.entities).find((val: any) =>
+    const sameAsMatch = Object.values(this.entities).find((val: any) =>
       val.entity["ceterms:sameAs"]?.includes(idx)
     );
+    if (sameAsMatch) return sameAsMatch;
+
+    return ctid ? this.getByCtid(ctid) : undefined;
   },
   registerEntity(
     entity: any,
     fetched: boolean,
+    rc: RegistryConfig,
     from: string | undefined = undefined,
     processed = false
   ) {
-    const id = entity["@id"];
+    const newEnt = replaceIdWithRegistryId(entity, rc);
+    const id = newEnt["@id"];
     if (!id) return;
     const exists = !!this.entities[id];
     if (
@@ -81,11 +120,16 @@ export const entityStore: Store = {
     ) {
       this.entities[id] = {
         fetched,
-        entity,
+        entity: newEnt,
         processed,
+        ...(from ? { sourceUrl: from } : {}),
       };
     }
     if (from) this.addReference(from, id);
+    for (const propValue of arrayOf(newEnt["ceterms:sameAs"] ?? [])) {
+      this.sameAsIndex[propValue] = id;
+    }
+    return newEnt;
   },
   // Track a reference so we can pull relevant entities out of the graph later
   addReference(from: string, to: string) {
@@ -98,6 +142,7 @@ export const entityStore: Store = {
         to,
       ];
   },
+
   entitiesThatReference(id: string) {
     return Object.keys(this.entitiesReferencedBy).filter((key) =>
       this.entitiesReferencedBy[key].includes(id)
@@ -108,6 +153,64 @@ export const entityStore: Store = {
     this.sameAsIndex = {};
     this.entitiesReferencedBy = {};
   },
+};
+
+/**
+ * Makes an HTTP request to a likely URL to fetch an entity. Register it as unprocessed in the entityStore
+ * @param {string} entityUrl - The URL to fetch
+ * @param {RegistryConfig} rc - Registry Configuration for the current action run
+ * @param {string | undefined} from - Entity ID, a CTID-based URL, the registry destination URL on the current env
+ * @returns {StoreEntity | void}
+ */
+const fetchAndRegisterEntity = async (
+  entityUrl: string,
+  rc: RegistryConfig,
+  from?: string
+): Promise<StoreEntity | void> => {
+  const entityResponse = await httpClient.fetch(entityUrl);
+  if (entityResponse.ok) {
+    const jsonData = await entityResponse.json();
+    if (
+      jsonData["@context"] != "https://credreg.net/ctdl/schema/context/json"
+    ) {
+      // if the fetched entity does not have the right context, express an error and return
+      // In the future, we can JSON-LD compact it into the expected context before continuing
+      // But we'll have to check to make sure the language maps and handle [value] => value transforms.
+      core.error(
+        `Error fetching ${entityUrl}: the fetched entity does not have the expected CTDL context.`
+      );
+      return;
+    }
+    // if the fetched entity does not have a CTID, Register it as a blank node.
+    if (!jsonData["ceterms:ctid"]) {
+      core.info(
+        `Found entity with no CTID in ${entityUrl}. Registering as a blank node in the graph.`
+      );
+      const newBlankNodeIdentifier = `_:b${uuidv4()}`;
+      entityStore.registerEntity(
+        {
+          ...jsonData,
+          "@id": newBlankNodeIdentifier,
+          "ceterms:sameAs": arrayOf(jsonData["ceterms:sameAs"] ?? []).concat([
+            entityUrl,
+          ]),
+        },
+        false,
+        rc
+      );
+      return;
+    }
+    // if the fetched entity does not have an @id or it is not the same as propValue, express an error and return
+    if (jsonData["@id"] != entityUrl) {
+      core.error(
+        `Error fetching ${entityUrl}: the fetched entity does not have an @id or it is not the same as the requested URL.`
+      );
+      return;
+    }
+
+    const newEntity = entityStore.registerEntity(jsonData, true, rc, from);
+    return newEntity;
+  }
 };
 
 const processConditionProfile = async (
@@ -128,29 +231,33 @@ const processConditionProfile = async (
         // Filter out erroneous non-string values
         if (typeof propValue !== "string") continue;
 
-        // if a string reference is already registered, just replace it with the registryId based on the CTID
-        if (entityStore.getFuzzy(propValue)) {
-          tempArray.push(entityStore.getFuzzy(propValue).entity["@id"]);
-        } else if (propValue.startsWith(`${rc.registryBaseUrl}/resources/`)) {
-          core.info(
-            `ConditionProfile references resource ${propValue} which is already presumed to be in the registry. Not adding it to graph.`
-          );
-          tempArray.push(propValue);
+        const matchingEntity = entityStore.getFuzzy(propValue);
+        if (matchingEntity) {
+          // if a string reference is already registered, just replace it with the registryId based on the CTID
+          tempArray.push(matchingEntity.entity["@id"]);
         } else if (propValue.startsWith("http")) {
+          // If propValue looks like a Registry URL from any environment, treat it like a resource that will
+          // exist in the current environment either now or later.
+          const ctid_match = extractCtidFromUrl(propValue);
+          if (ctid_match) {
+            core.info(
+              `ConditionProfile references resource ${propValue} which has CTID ${ctid_match}. Recording as a reference to the current registry environment.`
+            );
+            tempArray.push(`${rc.registryBaseUrl}/resources/${ctid_match}`);
+          }
+
+          // Handle Problematic URLs, just register them under this URL
+          // This just completely fails to go get the entity and extract its CTID.
+          // Instead, we need to get the entity in our store registered by CTID and then use a reference by CTID-based identifier on The current registry environment
           core.info(
-            `Found reference in ConditionProfile to organization ${propValue}. Registering as a blank node in the graph.`
+            `Found reference in ConditionProfile to URL to fetch and register: ${propValue}`
           );
-          const newBlankNodeIdentifier = `_:b${uuidv4()}`;
-          entityStore.registerEntity(
-            {
-              "@id": newBlankNodeIdentifier,
-              "@type": "ceterms:QACredentialOrganization",
-              "ceterms:sameAs": [propValue],
-            },
-            false,
+          const newEntity = await fetchAndRegisterEntity(
+            propValue,
+            rc,
             parentEntityId
           );
-          tempArray.push(newBlankNodeIdentifier);
+          if (newEntity) tempArray.push(newEntity["@id"]);
         }
       }
       ret[prop] = tempArray;
@@ -171,7 +278,7 @@ export const processEntity = async (
   if (entityType.length === 0 || !topLevelClassURIs.includes(entityType[0]))
     return entity;
 
-  if (!entity["ceterms:ctid"]) {
+  if (!entity["ceterms:ctid"] && !entityId.startsWith("_:")) {
     core.error(`No CTID found in entity ${entityId}`);
     return;
   }
@@ -181,7 +288,11 @@ export const processEntity = async (
   };
 
   // Process @id sameAs reference
-  if (!doc["@id"].startsWith(`${rc.registryBaseUrl}/resources/`)) {
+  if (
+    doc["@id"] &&
+    !doc["@id"].startsWith(`${rc.registryBaseUrl}/resources/`) &&
+    !doc["@id"].startsWith("_:")
+  ) {
     doc["ceterms:sameAs"] = arrayOf(doc["ceterms:sameAs"] ?? [])
       .filter((e) => e != doc["@id"])
       .concat([doc["@id"]]);
@@ -204,63 +315,32 @@ export const processEntity = async (
         if (typeof propValue === "string") {
           // if a string reference is already registered, just replace it with the registryId based on the CTID
           if (entityStore.getFuzzy(propValue)) {
-            const propValueCtid = entityStore.get(propValue)["ceterms:ctid"];
-            tempArray.push(`${rc.registryBaseUrl}/resources/${propValueCtid}`);
-          } else if (propValue.startsWith(`${rc.registryBaseUrl}/resources/`)) {
-            core.info(
-              `Entity ${doc["ceterms:ctid"]} references resource ${propValue} which is already presumed to be in the registry. Not adding it to graph.`
-            );
-            tempArray.push(propValue);
+            const existingEntity = entityStore.getFuzzy(propValue);
+            tempArray.push(existingEntity.entity["@id"]);
+            continue;
           }
-          // If propValue is a URL that was already fetched that is sameAs another URL in the graph,
-          // replace it with the registry URL that is now the canonical reference to this graph entry
-          else if (entityStore.sameAsIndex[propValue]) {
+
+          // If propValue looks like a Registry URL from any environment, treat it like a resource that will
+          // exist in the current environment either now or later.
+          const ctid_match = extractCtidFromUrl(propValue);
+          if (ctid_match) {
             core.info(
-              `${entityPrimaryType} ${doc["ceterms:ctid"]} references resource ${propValue} which is already in the registry. ` +
-                `Replacing with ${entityStore.sameAsIndex[propValue]}.`
+              `ConditionProfile references resource ${propValue} which has CTID ${ctid_match}. Recording as a reference to the current registry environment.`
             );
-            tempArray.push(entityStore.sameAsIndex[propValue]);
+            tempArray.push(`${rc.registryBaseUrl}/resources/${ctid_match}`);
           }
-          // if propValue looks like an HTTP url fetch it
+
+          // if propValue otherwise looks like an HTTP url fetch it and index its CTID
           else if (propValue.startsWith("http")) {
             core.info(
               `Fetching document with reference ${doc["@id"]} -> ${prop} [${index}]: ${propValue}`
             );
-            const propValueResponse = await httpClient.fetch(propValue);
-            if (propValueResponse.ok) {
-              const propValueJson = await propValueResponse.json();
-              // if the fetched entity does not have the right context, express an error and return
-              if (
-                propValueJson["@context"] !=
-                "https://credreg.net/ctdl/schema/context/json"
-              ) {
-                core.error(
-                  `Error fetching ${propValue}: the fetched entity does not have the expected CTDL context.`
-                );
-                return;
-              }
-              // if the fetched entity does not have a CTID, express an error and return
-              if (!propValueJson["ceterms:ctid"]) {
-                core.error(
-                  `Error fetching ${propValue}: the fetched entity does not have a self-assigned CTID.`
-                );
-                return;
-              }
-              // if the fetched entity does not have an @id or it is not the same as propValue, express an error and return
-              if (propValueJson["@id"] != propValue) {
-                core.error(
-                  `Error fetching ${propValue}: the fetched entity does not have an @id or it is not the same as the requested URL.`
-                );
-                return;
-              }
-              const idReplacedJson = replaceIdWithRegistryId(propValueJson, rc);
-              entityStore.registerEntity(idReplacedJson, true, doc["@id"]);
-              entityStore.sameAsIndex[propValueJson["@id"]] =
-                idReplacedJson["@id"];
-              tempArray.push(
-                `${rc.registryBaseUrl}/resources/${propValueJson["ceterms:ctid"]}`
-              );
-            }
+            const newEntity = await fetchAndRegisterEntity(
+              propValue,
+              rc,
+              doc["@id"]
+            );
+            tempArray.push(newEntity["@id"]);
           }
         }
         // else if propValue is an object, it may need to be embedded or may need to be separated
@@ -303,8 +383,13 @@ export const processEntity = async (
             typeof propValue["@id"] === "string" &&
             propValue["@id"].startsWith("_:")
           ) {
-            entityStore.registerEntity(propValue, false, doc["@id"]);
-            tempArray.push(propValue["@id"]);
+            const newEntity = entityStore.registerEntity(
+              propValue,
+              false,
+              rc,
+              doc["@id"]
+            );
+            tempArray.push(newEntity["@id"]);
           }
 
           // Case C: It is a reference to another node with its own URL that may be published,
@@ -313,35 +398,41 @@ export const processEntity = async (
             topLevelClassURIs.includes(nodeType) &&
             typeof propValue["ceterms:ctid"] === "string"
           ) {
-            const registryIdentifier = `${rc.registryBaseUrl}/resources/${propValue["ceterms:ctid"]}`;
-            entityStore.registerEntity(
-              {
-                ...propValue,
-                "@id": registryIdentifier,
-                "ceterms:sameAs": [
-                  ...arrayOf(propValue["ceterms:sameAs"] ?? []),
-                  propValue["@id"],
-                ],
-              },
+            const newEntity = entityStore.registerEntity(
+              propValue,
               false,
+              rc,
               doc["@id"]
             );
 
-            tempArray.push(registryIdentifier);
-            entityStore.sameAsIndex[propValue["@id"]] = registryIdentifier;
-          } else if (topLevelClassURIs.includes(nodeType)) {
+            tempArray.push(newEntity["@id"]);
+          }
+
+          // Case D: It is a reference to another entity by URL, but it doesn't have a CTID, so we'll include it as a
+          // blank node.
+          else if (topLevelClassURIs.includes(nodeType)) {
             const newBlankNodeIdentifier = `_:b${uuidv4()}`;
-            tempArray.push(newBlankNodeIdentifier);
-            entityStore.registerEntity(
+            const newEntity = entityStore.registerEntity(
               {
                 ...propValue,
                 "@id": newBlankNodeIdentifier,
+                ...(propValue["@id"]
+                  ? {
+                      "ceterms:sameAs": arrayOf(
+                        propValue["ceterms:sameAs"] ?? []
+                      ).concat([propValue["@id"]]),
+                    }
+                  : {}),
               },
               false,
+              rc,
               doc["@id"]
             );
-          } else {
-            // Otherwise, leave the element in place; it meets requirements or will be rejected by API
+            tempArray.push(newEntity["@id"]);
+          }
+
+          // Case E: Otherwise, leave the element in place; it meets requirements or will be rejected by API
+          else {
             tempArray.push(propValue);
           }
         }
@@ -351,11 +442,16 @@ export const processEntity = async (
   }
 
   // Register this as fetched and processed. TODO, writing over fetched here, double check for problems.
-  entityStore.registerEntity(doc, true, sourceGraphUrl, true);
+  entityStore.registerEntity(doc, true, rc, sourceGraphUrl, true);
   return doc;
 };
 
-const recurseUntilAllProcessedEntities = async (
+/**
+ * Ensures that links and IDs are correct within each document that might show up in the graph for an entity that will be published.
+ * @param {string} from - The id of the entity whose directly-linked entities you want to ensure are ready for publishing.
+ * @returns {void}
+ */
+const ensureReferencedEntitiesAreProcessed = async (
   from: string,
   rc: RegistryConfig
 ) => {
@@ -369,7 +465,7 @@ const recurseUntilAllProcessedEntities = async (
       );
       entityStore.get(entityId).processed = true;
       entityStore.get(entityId).entity = processedEntity;
-      await recurseUntilAllProcessedEntities(entityId, rc);
+      await ensureReferencedEntitiesAreProcessed(entityId, rc);
     }
   }
 };
@@ -383,7 +479,8 @@ export const extractGraphForEntity = (
 
   const referencedIds = entityStore.entitiesReferencedBy[entityId];
 
-  // Include only the entities that can be found that are not top-level classes
+  // Include only the entities that can be found that:
+  // - are not top-level classes (which will be published separately)
   // unless they are blank nodes.
   const referencedEntities =
     referencedIds
@@ -391,7 +488,11 @@ export const extractGraphForEntity = (
       .filter(
         (e) =>
           !!e &&
-          !topLevelClassURIs.includes(e["@type"] || e["@id"].startsWith("_:"))
+          e["@id"] &&
+          (e["@id"].startsWith("_:") ||
+            !topLevelClassURIs.includes(
+              arrayOf(e["@type"] ?? ["ceterms:Organization"])[0]
+            ))
       ) ?? [];
 
   return {
@@ -399,6 +500,43 @@ export const extractGraphForEntity = (
     // "@id": `${rc.registryBaseUrl}/graph/${entity.entity["ceterms:ctid"]}`,
     "@graph": [entity.entity, ...referencedEntities],
   };
+};
+
+export const getOrderedEntitiesToPublish = (urlsArray) => {
+  const entityIds = Object.values(entityStore.entities)
+    .filter((entity) => {
+      // Entity @id is in urlsArray or a sameAs value referencing this entity is in urlsArray
+      const entityId = entity.entity["@id"];
+      const sameAs = arrayOf(entity.entity["ceterms:sameAs"] ?? []);
+      return (
+        urlsArray.includes(entityId) ||
+        sameAs.some((url) => urlsArray.includes(url))
+      );
+    })
+    .filter((entity) => {
+      // Entity is a top-level class
+      const entityType = arrayOf(entity.entity["@type"] ?? [""]);
+      return topLevelClassURIs.includes(entityType[0]);
+    })
+    .sort((a, b) => {
+      const aType: string = arrayOf(a.entity["@type"] ?? [""])[0];
+      const bType: string = arrayOf(b.entity["@type"] ?? [""])[0];
+
+      const aIsOrg = classIsDescendantOf(aType, "ceterms:Organization");
+      const bIsOrg = classIsDescendantOf(bType, "ceterms:Organization");
+
+      if (aIsOrg && !bIsOrg) return -1;
+      else if (!aIsOrg && bIsOrg) return 1;
+
+      const aIsCred = classIsDescendantOf(aType, "ceterms:Credential");
+      const bIsCred = classIsDescendantOf(bType, "ceterms:Credential");
+
+      if (aIsCred && !bIsCred) return -1;
+      else if (!aIsCred && bIsCred) return 1;
+      else return 0;
+    })
+    .map((entity) => entity.entity["@id"]);
+  return entityIds;
 };
 
 export const validateGraph = (url: string, responseData: object): boolean => {

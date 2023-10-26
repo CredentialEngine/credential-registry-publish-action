@@ -20920,12 +20920,22 @@ const fetchBuilder = (/* unused pure expression or super */ null && (defaultFetc
 
 
 
-;// CONCATENATED MODULE: ./src/utils.ts
-const arrayOf = (type) => {
-    if (Array.isArray(type)) {
-        return type;
-    }
-    return [type];
+;// CONCATENATED MODULE: ./src/http.ts
+var __awaiter = (undefined && undefined.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+
+const httpClient = {
+    fetch: (url, options) => __awaiter(void 0, void 0, void 0, function* () {
+        console.log(`{http client} Fetching ${url}`);
+        return src(url, options);
+    }),
 };
 
 ;// CONCATENATED MODULE: ./src/types.ts
@@ -20940,88 +20950,219 @@ const AssistantBaseUrls = {
     production: "https://credentialengine.org/assistant",
 };
 
-;// CONCATENATED MODULE: ./src/learningProgram.ts
-var __awaiter = (undefined && undefined.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
+// EXTERNAL MODULE: ./node_modules/uuid/dist/index.js
+var dist = __nccwpck_require__(5840);
+;// CONCATENATED MODULE: ./node_modules/uuid/wrapper.mjs
+
+const v1 = dist.v1;
+const v3 = dist.v3;
+const v4 = dist.v4;
+const v5 = dist.v5;
+const NIL = dist.NIL;
+const version = dist.version;
+const validate = dist.validate;
+const stringify = dist.stringify;
+const parse = dist.parse;
+
+;// CONCATENATED MODULE: ./src/ctdl.ts
+// Documentation and utility classes governing how the Credential Registry API handles various classes.
+// Particularly, identifying which classes are primary (have a CTID), and which are secondary (do not).
+// Primary classes should be published as a graph with one such entity as the first object, and no other
+// instances of primary classes should be included in the graph. Such other instances should be referenced
+// by ID as a string and published as their own graph.
+var _a;
+
+const endpoints = {
+    // Organization and subtypes
+    "ceterms:CredentialOrganization": "/organization/publishGraph",
+    "ceterms:Organization": "/organization/publishGraph",
+    "ceterms:QACredentialOrganization": "/organization/publishGraph",
+    // Credential and subtypes
+    "ceterms:Credential": "/credential/publishGraph",
+    "ceterms:ApprenticeshipCertificate": "/credential/publishGraph",
+    "ceterms:AssociateDegree": "/credential/publishGraph",
+    "ceterms:AssociateOfAppliedArtsDegree": "/credential/publishGraph",
+    "ceterms:AssociateOfAppliedScienceDegree": "/credential/publishGraph",
+    "ceterms:AssociateOfArtsDegree": "/credential/publishGraph",
+    "ceterms:AssociateOfScienceDegree": "/credential/publishGraph",
+    "ceterms:BachelorDegree": "/credential/publishGraph",
+    "ceterms:BachelorOfArtsDegree": "/credential/publishGraph",
+    "ceterms:BachelorOfScienceDegree": "/credential/publishGraph",
+    "ceterms:Badge": "/credential/publishGraph",
+    "ceterms:Certificate": "/credential/publishGraph",
+    "ceterms:CertificateOfCompletion": "/credential/publishGraph",
+    "ceterms:Certification": "/credential/publishGraph",
+    "ceterms:Degree": "/credential/publishGraph",
+    "ceterms:DigitalBadge": "/credential/publishGraph",
+    "ceterms:Diploma": "/credential/publishGraph",
+    "ceterms:DoctoralDegree": "/credential/publishGraph",
+    "ceterms:GeneralEducationDevelopment": "/credential/publishGraph",
+    "ceterms:JourneymanCertificate": "/credential/publishGraph",
+    "ceterms:License": "/credential/publishGraph",
+    "ceterms:MasterCertificate": "/credential/publishGraph",
+    "ceterms:MastersDegree": "/credential/publishGraph",
+    "ceterms:MasterOfArtsDegree": "/credential/publishGraph",
+    "ceterms:MasterOfScienceDegree": "/credential/publishGraph",
+    "ceterms:MicroCredential": "/credential/publishGraph",
+    "ceterms:OpenBadge": "/credential/publishGraph",
+    "ceterms:ProfessionalDoctorate": "/credential/publishGraph",
+    "ceterms:QualityAssuranceCredential": "/credential/publishGraph",
+    "ceterms:ResearchDoctorate": "/credential/publishGraph",
+    "ceterms:SecondarySchoolDiploma": "/credential/publishGraph",
+    "ceterms:SpecialistDegree": "/credential/publishGraph",
+    // Learning Opportunity (and Course, specifically)
+    "ceterms:Course": "/course/publishGraph",
+    "ceterms:LearningOpportunityProfile": "/learningopportunity/publishGraph",
+    "ceterms:LearningProgram": "/learningprogram/publishGraph",
+};
+//Add any missing URIs from the source array to the destination array
+const appendURIs = (destination, source) => {
+    destination &&
+        source &&
+        source
+            .filter((uri) => !destination.includes(uri))
+            .forEach((uri) => destination.push(uri));
+};
+//Append terms to schemaData.merged
+const appendTerms = (destination, source) => {
+    //For each term in the source...
+    source["@graph"].forEach((term) => {
+        //Find a match in schemaData.merged
+        var match = destination.find((otherTerm) => otherTerm["@id"] == term["@id"]);
+        //If found...
+        if (match) {
+            //Append any missing URIs to the term's domain and range (needed to accommodate any subtle differences in domains/ranges between schemas, which generally shouldn't happen anyway)
+            appendURIs(match["schema:domainIncludes"], term["schema:domainIncludes"]);
+            appendURIs(match["schema:rangeIncludes"], term["schema:rangeIncludes"]);
+        }
+        //Otherwise...
+        else {
+            //Add the term to schemaData.merged (may want to copy it instead so as not to alter the original term when its domain/range are updated?)
+            schemaData.merged.push(term);
+        }
     });
 };
-
-
-
-/*
-https://credreg.net/registry/policy#learningprogram
-Learning Program required properties and whether they would be a linked node that would require spidered fetching
-
-Life Cycle Status Type `ceterms:lifeCycleStatusType` - no
-Name `ceterms:name` - no
-Description `ceterms:description` - no
-Subject Webpage `ceterms:subjectWebpage` - no
-CTID `ceterms:ctid` - no
-InLanguage `ceterms:inLanguage` - no
-
-Recommended properties:
-Keyword `ceterms:keyword`
-
-Other properties in range:
-*/
-const publishLearningProgram = (learningProgramGraph, metadata, registryConfig) => __awaiter(void 0, void 0, void 0, function* () {
-    const ctid = learningProgramGraph["@graph"][0]["ceterms:ctid"];
-    const graphId = `${registryConfig.registryBaseUrl}/graph/${ctid}`;
-    core.info(`Validating learning program from ${metadata.url} with ctid: ${ctid}...`);
-    const validationUrl = `${AssistantBaseUrls[registryConfig.registryEnv]}/learningprogram/validategraph`;
-    const validateResponse = yield src(validationUrl, {
-        method: "POST",
-        headers: {
-            Authorization: `ApiToken ${registryConfig.registryApiKey}`,
-        },
-        body: JSON.stringify({
-            PublishForOrganizationIdentifier: registryConfig.registryOrgCtid,
-            GraphInput: Object.assign(Object.assign({}, learningProgramGraph), { "@id": graphId }),
-        }),
+const CtdlSchema = JSON.parse(external_fs_.readFileSync("./src/ctdl-schema.json", "utf8"));
+const CtdlAsnSchema = JSON.parse(external_fs_.readFileSync("./src/ctdlasn-schema.json", "utf8"));
+const QDataSchema = JSON.parse(external_fs_.readFileSync("./src/qdata-schema.json", "utf8"));
+//Hold all schema data
+let schemaData = {
+    ctdl: CtdlSchema,
+    ctdlasn: CtdlAsnSchema,
+    qdata: QDataSchema,
+    merged: [],
+};
+//
+appendTerms(schemaData.merged, schemaData.ctdl);
+appendTerms(schemaData.merged, schemaData.ctdlasn);
+appendTerms(schemaData.merged, schemaData.qdata);
+//For each top-level class (ie class with a CTID), render the class and the properties for that class which point to a top-level class
+//Get the CTID property and top-level classes
+const ctidProperty = (_a = schemaData.merged.find((item) => item["@id"] == "ceterms:ctid")) !== null && _a !== void 0 ? _a : {};
+const topLevelClasses = schemaData.merged.filter((item) => ctidProperty["schema:domainIncludes"].includes(item["@id"]));
+const topLevelClassURIs = topLevelClasses.map((item) => item["@id"]);
+const getMaybePointerPropertiesForClass = (className) => {
+    //Account for properties that may or may not reference a top-level class
+    const classProps = schemaData.merged.filter((property) => {
+        var _a, _b;
+        return property["@type"] === "rdf:Property" &&
+            (((_a = property["schema:rangeIncludes"]) === null || _a === void 0 ? void 0 : _a.includes("xsd:anyURI")) ||
+                ((_b = property["schema:rangeIncludes"]) === null || _b === void 0 ? void 0 : _b.includes("rdfs:Resource")));
     });
-    if (!validateResponse.ok) {
-        core.error(`Error validating learning program: ${validateResponse.statusText}`);
-        return;
-    }
-    const learningProgramJson = yield validateResponse.json();
-    if (learningProgramJson["Successful"] == false) {
-        core.error(`Error publishing learning program ${metadata.url}: ${learningProgramJson["Messages"]}`);
-        return;
-    }
-    core.info(`Validated learning program structure.`);
-    core.info(`Publishing learning program ${graphId} ...`);
-    const publishUrl = `${AssistantBaseUrls[registryConfig.registryEnv]}/learningprogram/publishgraph`;
-    const publishResponse = yield src(publishUrl, {
-        method: "POST",
-        headers: {
-            Authorization: `ApiToken ${registryConfig.registryApiKey}`,
-        },
-        body: JSON.stringify({
-            PublishForOrganizationIdentifier: registryConfig.registryOrgCtid,
-            Publish: true,
-            GraphInput: Object.assign(Object.assign({}, learningProgramGraph), { "@id": `${registryConfig.registryBaseUrl}/graph/` +
-                    learningProgramGraph["@graph"][0]["ceterms:ctid"] }),
-        }),
-    });
-    if (!publishResponse.ok) {
-        core.error(`Response Not OK. Error publishing learning program graph ${graphId}: ${publishResponse.statusText}`);
-        return;
-    }
-    const publishJson = yield publishResponse.json();
-    if (publishJson["Successful"] == false) {
-        core.error(`Error publishing learning program: ${publishJson["Messages"]}`);
-        return;
-    }
-    core.info(`Published learning program ${graphId} with CTID ${ctid}.`);
+    return classProps.map((prop) => prop["@id"]);
+};
+const getClassMetadata = (className) => {
+    const classInfo = CtdlSchema["@graph"].find((entity) => entity["@id"] === className);
+    const subClassOf = (classInfo === null || classInfo === void 0 ? void 0 : classInfo["rdfs:subClassOf"])
+        ? classInfo["rdfs:subClassOf"].find((e) => e.startsWith("ceterms:"))
+        : undefined;
+    const isPrimary = topLevelClassURIs.includes(className);
+    const publishEndpoint = endpoints[className];
+    return Object.assign(Object.assign(Object.assign({ className }, (subClassOf && { subClassOf })), { isPrimary }), (publishEndpoint && { publishEndpoint }));
+};
+const classMetadata = schemaData.merged.reduce((acc, item, ind, arr) => {
+    const thisMeta = item["@type"] === "rdfs:Class"
+        ? getClassMetadata(item["@id"])
+        : undefined;
+    return Object.assign(Object.assign({}, acc), (thisMeta ? { [item["@id"]]: thisMeta } : {}));
 });
+const getPropertiesForClass = (className) => {
+    const properties = schemaData.merged.filter((entity) => {
+        var _a;
+        return entity["@type"] === "rdf:Property" &&
+            ((_a = entity["schema:domainIncludes"]) === null || _a === void 0 ? void 0 : _a.includes(className));
+    });
+    const propertyNames = properties.map((prop) => prop["@id"]);
+    return propertyNames;
+};
+const getRangeForProperty = (propertyName) => {
+    var _a;
+    const property = schemaData.merged.find((entity) => entity["@id"] === propertyName);
+    return property ? (_a = property["schema:rangeIncludes"]) !== null && _a !== void 0 ? _a : [] : [];
+};
+const getTopLevelPointerPropertiesForClass = (className) => {
+    const classProps = schemaData.merged.filter((entity) => {
+        var _a, _b;
+        return entity["@type"] === "rdf:Property" &&
+            ((_a = entity["schema:domainIncludes"]) === null || _a === void 0 ? void 0 : _a.includes(className)) &&
+            ((_b = entity["schema:rangeIncludes"]) === null || _b === void 0 ? void 0 : _b.some((range) => topLevelClassURIs.includes(range)));
+    });
+    return classProps.map((prop) => prop["@id"]);
+};
+// Get the properties that might have a ceterms:ConditionProfile entity in range:
+const getConditionProfilePointerPropertiesForClass = (className) => {
+    const classProps = schemaData.merged.filter((entity) => {
+        var _a, _b;
+        return entity["@type"] === "rdf:Property" &&
+            ((_a = entity["schema:domainIncludes"]) === null || _a === void 0 ? void 0 : _a.includes(className)) &&
+            ((_b = entity["schema:rangeIncludes"]) === null || _b === void 0 ? void 0 : _b.some((c) => "ceterms:ConditionProfile" == c));
+    });
+    return classProps.map((prop) => prop["@id"]);
+};
+const classIsDescendantOf = (c, ancestor) => {
+    var _a;
+    if (c === ancestor)
+        return true;
+    const parent = (_a = classMetadata[c]) === null || _a === void 0 ? void 0 : _a.subClassOf;
+    if (!parent)
+        return false;
+    if (parent === ancestor)
+        return true;
+    return classIsDescendantOf(parent, ancestor);
+};
 
-;// CONCATENATED MODULE: ./src/runner.ts
-var runner_awaiter = (undefined && undefined.__awaiter) || function (thisArg, _arguments, P, generator) {
+;// CONCATENATED MODULE: ./src/utils.ts
+
+const arrayOf = (type) => {
+    if (Array.isArray(type)) {
+        return type;
+    }
+    return [type];
+};
+const replaceIdWithRegistryId = (entity, registryConfig) => {
+    var _a;
+    const id = entity["@id"];
+    const ctidBasedId = `${registryConfig.registryBaseUrl}/resources/${entity["ceterms:ctid"]}`;
+    if (!id || !entity["ceterms:ctid"] || id == ctidBasedId)
+        return entity;
+    return Object.assign(Object.assign(Object.assign({}, entity), (entity["ceterms:ctid"] ? { "@id": ctidBasedId } : {})), (id.startsWith("_:")
+        ? {}
+        : { "ceterms:sameAs": [...arrayOf((_a = entity["ceterms:sameAs"]) !== null && _a !== void 0 ? _a : []), id] }));
+};
+const decorateIndex = (index) => index > 0 ? `[${index}]` : "";
+const extractCtidFromUrl = (url) => {
+    // If on any Registry Environment, this is a resource URL, extract the CTID
+    return Object.values(RegistryBaseUrls).find((env) => {
+        const matcher = new RegExp(`${env}/resources/(ce-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})`, "i");
+        const match = url.match(matcher);
+        if (match) {
+            return match[1];
+        }
+    });
+};
+
+;// CONCATENATED MODULE: ./src/graphs.ts
+var graphs_awaiter = (undefined && undefined.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
         function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
@@ -21035,6 +21176,325 @@ var runner_awaiter = (undefined && undefined.__awaiter) || function (thisArg, _a
 
 
 
+const entityStore = {
+    entities: {},
+    sameAsIndex: {},
+    entitiesReferencedBy: {},
+    get: function (id) {
+        return this.entities[id];
+    },
+    getByCtid: function (ctid) {
+        return Object.values(this.entities).find((val) => val.entity["ceterms:ctid"] === ctid);
+    },
+    getFuzzy: function (idx, ctid) {
+        const idMatch = this.get(idx);
+        if (idMatch)
+            return idMatch;
+        const sameAsMatch = Object.values(this.entities).find((val) => { var _a; return (_a = val.entity["ceterms:sameAs"]) === null || _a === void 0 ? void 0 : _a.includes(idx); });
+        if (sameAsMatch)
+            return sameAsMatch;
+        return ctid ? this.getByCtid(ctid) : undefined;
+    },
+    registerEntity(entity, fetched, rc, from = undefined, processed = false) {
+        var _a;
+        const newEnt = replaceIdWithRegistryId(entity, rc);
+        const id = newEnt["@id"];
+        if (!id)
+            return;
+        const exists = !!this.entities[id];
+        if (!exists ||
+            (exists && fetched && !this.entities[id].fetched) ||
+            (exists && processed && !this.entities[id].processed)) {
+            this.entities[id] = Object.assign({ fetched, entity: newEnt, processed }, (from ? { sourceUrl: from } : {}));
+        }
+        if (from)
+            this.addReference(from, id);
+        for (const propValue of arrayOf((_a = newEnt["ceterms:sameAs"]) !== null && _a !== void 0 ? _a : [])) {
+            this.sameAsIndex[propValue] = id;
+        }
+        return newEnt;
+    },
+    // Track a reference so we can pull relevant entities out of the graph later
+    addReference(from, to) {
+        var _a, _b;
+        if (!this.entitiesReferencedBy[from] ||
+            ((_a = this.entitiesReferencedBy[from]) === null || _a === void 0 ? void 0 : _a.indexOf(to)) === -1)
+            this.entitiesReferencedBy[from] = [
+                ...((_b = this.entitiesReferencedBy[from]) !== null && _b !== void 0 ? _b : []),
+                to,
+            ];
+    },
+    entitiesThatReference(id) {
+        return Object.keys(this.entitiesReferencedBy).filter((key) => this.entitiesReferencedBy[key].includes(id));
+    },
+    reset() {
+        this.entities = {};
+        this.sameAsIndex = {};
+        this.entitiesReferencedBy = {};
+    },
+};
+/**
+ * Makes an HTTP request to a likely URL to fetch an entity. Register it as unprocessed in the entityStore
+ * @param {string} entityUrl - The URL to fetch
+ * @param {RegistryConfig} rc - Registry Configuration for the current action run
+ * @param {string | undefined} from - Entity ID, a CTID-based URL, the registry destination URL on the current env
+ * @returns {StoreEntity | void}
+ */
+const fetchAndRegisterEntity = (entityUrl, rc, from) => graphs_awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const entityResponse = yield httpClient.fetch(entityUrl);
+    if (entityResponse.ok) {
+        const jsonData = yield entityResponse.json();
+        if (jsonData["@context"] != "https://credreg.net/ctdl/schema/context/json") {
+            // if the fetched entity does not have the right context, express an error and return
+            // In the future, we can JSON-LD compact it into the expected context before continuing
+            // But we'll have to check to make sure the language maps and handle [value] => value transforms.
+            core.error(`Error fetching ${entityUrl}: the fetched entity does not have the expected CTDL context.`);
+            return;
+        }
+        // if the fetched entity does not have a CTID, Register it as a blank node.
+        if (!jsonData["ceterms:ctid"]) {
+            core.info(`Found entity with no CTID in ${entityUrl}. Registering as a blank node in the graph.`);
+            const newBlankNodeIdentifier = `_:b${v4()}`;
+            entityStore.registerEntity(Object.assign(Object.assign({}, jsonData), { "@id": newBlankNodeIdentifier, "ceterms:sameAs": arrayOf((_a = jsonData["ceterms:sameAs"]) !== null && _a !== void 0 ? _a : []).concat([
+                    entityUrl,
+                ]) }), false, rc);
+            return;
+        }
+        // if the fetched entity does not have an @id or it is not the same as propValue, express an error and return
+        if (jsonData["@id"] != entityUrl) {
+            core.error(`Error fetching ${entityUrl}: the fetched entity does not have an @id or it is not the same as the requested URL.`);
+            return;
+        }
+        const newEntity = entityStore.registerEntity(jsonData, true, rc, from);
+        return newEntity;
+    }
+});
+const processConditionProfile = (cp, rc, parentEntityId) => graphs_awaiter(void 0, void 0, void 0, function* () {
+    let ret = Object.assign({}, cp);
+    const pointers = getTopLevelPointerPropertiesForClass("ceterms:ConditionProfile");
+    for (const prop of pointers) {
+        let tempArray = [];
+        if (cp[prop]) {
+            for (const propValue of arrayOf(cp[prop])) {
+                // Filter out erroneous non-string values
+                if (typeof propValue !== "string")
+                    continue;
+                const matchingEntity = entityStore.getFuzzy(propValue);
+                if (matchingEntity) {
+                    // if a string reference is already registered, just replace it with the registryId based on the CTID
+                    tempArray.push(matchingEntity.entity["@id"]);
+                }
+                else if (propValue.startsWith("http")) {
+                    // If propValue looks like a Registry URL from any environment, treat it like a resource that will
+                    // exist in the current environment either now or later.
+                    const ctid_match = extractCtidFromUrl(propValue);
+                    if (ctid_match) {
+                        core.info(`ConditionProfile references resource ${propValue} which has CTID ${ctid_match}. Recording as a reference to the current registry environment.`);
+                        tempArray.push(`${rc.registryBaseUrl}/resources/${ctid_match}`);
+                    }
+                    // Handle Problematic URLs, just register them under this URL
+                    // This just completely fails to go get the entity and extract its CTID.
+                    // Instead, we need to get the entity in our store registered by CTID and then use a reference by CTID-based identifier on The current registry environment
+                    core.info(`Found reference in ConditionProfile to URL to fetch and register: ${propValue}`);
+                    const newEntity = yield fetchAndRegisterEntity(propValue, rc, parentEntityId);
+                    if (newEntity)
+                        tempArray.push(newEntity["@id"]);
+                }
+            }
+            ret[prop] = tempArray;
+        }
+    }
+    return ret;
+});
+const processEntity = (entity, rc, sourceGraphUrl = undefined) => graphs_awaiter(void 0, void 0, void 0, function* () {
+    var _b, _c;
+    const entityType = arrayOf(entity["@type"]);
+    const entityId = entity["@id"];
+    // Make no changes to the entity if it is not a top-level class... consider should it be registered though?
+    if (entityType.length === 0 || !topLevelClassURIs.includes(entityType[0]))
+        return entity;
+    if (!entity["ceterms:ctid"] && !entityId.startsWith("_:")) {
+        core.error(`No CTID found in entity ${entityId}`);
+        return;
+    }
+    let doc = Object.assign({}, entity);
+    // Process @id sameAs reference
+    if (doc["@id"] &&
+        !doc["@id"].startsWith(`${rc.registryBaseUrl}/resources/`) &&
+        !doc["@id"].startsWith("_:")) {
+        doc["ceterms:sameAs"] = arrayOf((_b = doc["ceterms:sameAs"]) !== null && _b !== void 0 ? _b : [])
+            .filter((e) => e != doc["@id"])
+            .concat([doc["@id"]]);
+        doc["@id"] = `${rc.registryBaseUrl}/resources/${doc["ceterms:ctid"]}`;
+    }
+    const entityPrimaryType = entityType[0];
+    const pointers = new Set(getTopLevelPointerPropertiesForClass(entityPrimaryType).concat(getConditionProfilePointerPropertiesForClass(entityPrimaryType)));
+    for (const prop of pointers) {
+        if (doc[prop]) {
+            // TODO: Separate out into function with signature doc[prop] = processProperty(doc, prop, ...)
+            const propArray = arrayOf(doc[prop]);
+            let tempArray = [];
+            for (const [index, propValue] of propArray.entries()) {
+                if (typeof propValue === "string") {
+                    // if a string reference is already registered, just replace it with the registryId based on the CTID
+                    if (entityStore.getFuzzy(propValue)) {
+                        const existingEntity = entityStore.getFuzzy(propValue);
+                        tempArray.push(existingEntity.entity["@id"]);
+                        continue;
+                    }
+                    // If propValue looks like a Registry URL from any environment, treat it like a resource that will
+                    // exist in the current environment either now or later.
+                    const ctid_match = extractCtidFromUrl(propValue);
+                    if (ctid_match) {
+                        core.info(`ConditionProfile references resource ${propValue} which has CTID ${ctid_match}. Recording as a reference to the current registry environment.`);
+                        tempArray.push(`${rc.registryBaseUrl}/resources/${ctid_match}`);
+                    }
+                    // if propValue otherwise looks like an HTTP url fetch it and index its CTID
+                    else if (propValue.startsWith("http")) {
+                        core.info(`Fetching document with reference ${doc["@id"]} -> ${prop} [${index}]: ${propValue}`);
+                        const newEntity = yield fetchAndRegisterEntity(propValue, rc, doc["@id"]);
+                        tempArray.push(newEntity["@id"]);
+                    }
+                }
+                // else if propValue is an object, it may need to be embedded or may need to be separated
+                // (either as a reference to another registry resource or presented as a blank node in this
+                // graph), depending on its type and whether or not is has a CTID defined.
+                else if (typeof propValue === "object") {
+                    // if it has a type defined, check if it is in range of the expected node types for this
+                    // property. Throw an error if not.
+                    const nodeType = propValue["@type"];
+                    const inRangeTypesForProp = nodeType ? getRangeForProperty(prop) : [];
+                    // Leave in place if there is no type. API validation will catch it if it's a problem.
+                    if (!nodeType || typeof nodeType !== "string") {
+                        tempArray.push(propValue);
+                        continue;
+                    }
+                    // Case A: If it is a declared but unsupported value for this property, throw an error.
+                    if (!inRangeTypesForProp.includes(nodeType)) {
+                        core.error(`Error: invalid value of type ${nodeType} for property ${prop} ${decorateIndex(index)} in entity ${entityId}`);
+                        return;
+                    }
+                    // Case B: It is a ConditionProfile, which is a special case that is always embedded
+                    if (arrayOf(propValue["@type"]).includes("ceterms:ConditionProfile")) {
+                        tempArray.push(yield processConditionProfile(propValue, rc, doc["@id"]));
+                    }
+                    // Case B: It is declared here as a blank node. Push it out separately in the graph
+                    else if (topLevelClassURIs.includes(nodeType) &&
+                        typeof propValue["@id"] === "string" &&
+                        propValue["@id"].startsWith("_:")) {
+                        const newEntity = entityStore.registerEntity(propValue, false, rc, doc["@id"]);
+                        tempArray.push(newEntity["@id"]);
+                    }
+                    // Case C: It is a reference to another node with its own URL that may be published,
+                    // as the top-level entity of its own graph. It'll be referenced by its CTID here.
+                    else if (topLevelClassURIs.includes(nodeType) &&
+                        typeof propValue["ceterms:ctid"] === "string") {
+                        const newEntity = entityStore.registerEntity(propValue, false, rc, doc["@id"]);
+                        tempArray.push(newEntity["@id"]);
+                    }
+                    // Case D: It is a reference to another entity by URL, but it doesn't have a CTID, so we'll include it as a
+                    // blank node.
+                    else if (topLevelClassURIs.includes(nodeType)) {
+                        const newBlankNodeIdentifier = `_:b${v4()}`;
+                        const newEntity = entityStore.registerEntity(Object.assign(Object.assign(Object.assign({}, propValue), { "@id": newBlankNodeIdentifier }), (propValue["@id"]
+                            ? {
+                                "ceterms:sameAs": arrayOf((_c = propValue["ceterms:sameAs"]) !== null && _c !== void 0 ? _c : []).concat([propValue["@id"]]),
+                            }
+                            : {})), false, rc, doc["@id"]);
+                        tempArray.push(newEntity["@id"]);
+                    }
+                    // Case E: Otherwise, leave the element in place; it meets requirements or will be rejected by API
+                    else {
+                        tempArray.push(propValue);
+                    }
+                }
+            }
+            doc[prop] = tempArray;
+        }
+    }
+    // Register this as fetched and processed. TODO, writing over fetched here, double check for problems.
+    entityStore.registerEntity(doc, true, rc, sourceGraphUrl, true);
+    return doc;
+});
+/**
+ * Ensures that links and IDs are correct within each document that might show up in the graph for an entity that will be published.
+ * @param {string} from - The id of the entity whose directly-linked entities you want to ensure are ready for publishing.
+ * @returns {void}
+ */
+const ensureReferencedEntitiesAreProcessed = (from, rc) => graphs_awaiter(void 0, void 0, void 0, function* () {
+    const entities = entityStore.entitiesReferencedBy[from];
+    if (!entities)
+        return;
+    for (const entityId of entities) {
+        if (entityStore.get(entityId).processed === false) {
+            const processedEntity = yield processEntity(entityStore.get(entityId).entity, rc);
+            entityStore.get(entityId).processed = true;
+            entityStore.get(entityId).entity = processedEntity;
+            yield ensureReferencedEntitiesAreProcessed(entityId, rc);
+        }
+    }
+});
+const extractGraphForEntity = (entityId, rc) => {
+    var _a;
+    const entity = entityStore.get(entityId);
+    if (!entity)
+        return;
+    const referencedIds = entityStore.entitiesReferencedBy[entityId];
+    // Include only the entities that can be found that:
+    // - are not top-level classes (which will be published separately)
+    // unless they are blank nodes.
+    const referencedEntities = (_a = referencedIds === null || referencedIds === void 0 ? void 0 : referencedIds.map((id) => { var _a; return (_a = entityStore.get(id)) === null || _a === void 0 ? void 0 : _a.entity; }).filter((e) => {
+        var _a;
+        return !!e &&
+            e["@id"] &&
+            (e["@id"].startsWith("_:") ||
+                !topLevelClassURIs.includes(arrayOf((_a = e["@type"]) !== null && _a !== void 0 ? _a : ["ceterms:Organization"])[0]));
+    })) !== null && _a !== void 0 ? _a : [];
+    return {
+        "@context": "https://credreg.net/ctdl/schema/context/json",
+        // "@id": `${rc.registryBaseUrl}/graph/${entity.entity["ceterms:ctid"]}`,
+        "@graph": [entity.entity, ...referencedEntities],
+    };
+};
+const getOrderedEntitiesToPublish = (urlsArray) => {
+    const entityIds = Object.values(entityStore.entities)
+        .filter((entity) => {
+        var _a;
+        // Entity @id is in urlsArray or a sameAs value referencing this entity is in urlsArray
+        const entityId = entity.entity["@id"];
+        const sameAs = arrayOf((_a = entity.entity["ceterms:sameAs"]) !== null && _a !== void 0 ? _a : []);
+        return (urlsArray.includes(entityId) ||
+            sameAs.some((url) => urlsArray.includes(url)));
+    })
+        .filter((entity) => {
+        var _a;
+        // Entity is a top-level class
+        const entityType = arrayOf((_a = entity.entity["@type"]) !== null && _a !== void 0 ? _a : [""]);
+        return topLevelClassURIs.includes(entityType[0]);
+    })
+        .sort((a, b) => {
+        var _a, _b;
+        const aType = arrayOf((_a = a.entity["@type"]) !== null && _a !== void 0 ? _a : [""])[0];
+        const bType = arrayOf((_b = b.entity["@type"]) !== null && _b !== void 0 ? _b : [""])[0];
+        const aIsOrg = classIsDescendantOf(aType, "ceterms:Organization");
+        const bIsOrg = classIsDescendantOf(bType, "ceterms:Organization");
+        if (aIsOrg && !bIsOrg)
+            return -1;
+        else if (!aIsOrg && bIsOrg)
+            return 1;
+        const aIsCred = classIsDescendantOf(aType, "ceterms:Credential");
+        const bIsCred = classIsDescendantOf(bType, "ceterms:Credential");
+        if (aIsCred && !bIsCred)
+            return -1;
+        else if (!aIsCred && bIsCred)
+            return 1;
+        else
+            return 0;
+    })
+        .map((entity) => entity.entity["@id"]);
+    return entityIds;
+};
 const validateGraph = (url, responseData) => {
     // validate context matches CTDL expectation:
     // https://credreg.net/ctdl/schema/context/json
@@ -21049,12 +21509,9 @@ const validateGraph = (url, responseData) => {
         core.error(`URL ${url} did not return expected @context. Use https://credreg.net/ctdl/schema/context/json`);
         return false;
     }
-    //   if (!responseData["@graph"]) {
-    //     core.error(
-    //       `This tool only supports ingestion of CTDL data in @graph format at this time. No @graph found in document ${url}`
-    //     );
-    //     return false;
-    //   }
+    if (!responseData["@graph"]) {
+        return false;
+    }
     return true;
 };
 const indexDocuments = (documents) => {
@@ -21062,7 +21519,8 @@ const indexDocuments = (documents) => {
     let metadata = {};
     // Nodes identifies the document URLs in which the node is represented in the graph.
     let urlsForNode = {};
-    // For each document, validate that it is a graph, and index the value of the @type property for each entity as DocumentMetadata
+    // For each document, validate that it is a graph, and index the value of the @type property for
+    // each entity as DocumentMetadata
     Object.keys(documents).forEach((url) => {
         const responseData = documents[url];
         let graph = [];
@@ -21076,10 +21534,12 @@ const indexDocuments = (documents) => {
             graph = [responseData];
         }
         let entitiesByType = {};
-        // This makes the assumption that if the same node appears in multiple graphs, any one of the graphs will contain all of the types for that node.
+        // This makes the assumption that if the same node appears in multiple graphs, any one of the
+        // graphs will contain all of the types for that node.
         let entityTypes = {};
         graph.forEach((entity) => {
-            // If the URL of this document does not yet appear in the array of URLs that contain this node, index it there
+            // If the URL of this document does not yet appear in the array of URLs that contain this
+            // node, index it there
             if (!urlsForNode[entity["@id"]]) {
                 urlsForNode[entity["@id"]] = [url];
             }
@@ -21115,6 +21575,58 @@ const indexDocuments = (documents) => {
     });
     return { metadata, urlsForNode };
 };
+
+;// CONCATENATED MODULE: ./src/runner.ts
+var runner_awaiter = (undefined && undefined.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+
+
+
+
+
+const publishDocument = (graphDocument, registryConfig, classMetadata) => runner_awaiter(void 0, void 0, void 0, function* () {
+    const ctid = graphDocument["@graph"][0]["ceterms:ctid"];
+    const entityType = graphDocument["@graph"][0]["@type"];
+    const graphId = `${registryConfig.registryBaseUrl}/graph/${ctid}`;
+    core.info(`Publishing ${classMetadata.className} ${graphId} ...`);
+    const publishUrl = `${AssistantBaseUrls[registryConfig.registryEnv]}${classMetadata.publishEndpoint}`;
+    if (registryConfig.dryRun) {
+        core.info(`Dry run: would publish to ${publishUrl}`);
+        core.info(JSON.stringify(graphDocument, null, 2));
+        return false;
+    }
+    core.info(`Publishing to ${publishUrl}`);
+    const publishResponse = yield httpClient.fetch(publishUrl, {
+        method: "POST",
+        headers: {
+            Authorization: `ApiToken ${registryConfig.registryApiKey}`,
+        },
+        body: JSON.stringify({
+            PublishForOrganizationIdentifier: registryConfig.registryOrgCtid,
+            Publish: true,
+            GraphInput: graphDocument,
+        }),
+    });
+    if (!publishResponse.ok) {
+        core.error(`Response Not OK. Error publishing ${entityType} graph ${graphId}: ${publishResponse.statusText}`);
+        core.info(JSON.stringify(graphDocument, null, 2));
+        return false;
+    }
+    const publishJson = yield publishResponse.json();
+    if (publishJson["Successful"] == false) {
+        core.error(`Errors publishing ${entityType}: ${publishJson["Messages"].join(", ")}`);
+        return false;
+    }
+    core.info(`Published ${entityType} ${graphId} with CTID ${ctid}.`);
+    return true;
+});
 /* ---------------
 - RUN THE ACTION -
 --------------- */
@@ -21131,19 +21643,24 @@ const run = () => runner_awaiter(void 0, void 0, void 0, function* () {
     core.info(`Selected ${registryEnv} environment.`);
     const registryApiKey = core.getInput("registry_api_key");
     if (!registryApiKey) {
-        core.error("Invalid registry-api-key input. You must provide a registry API key.");
+        core.error("Invalid registry_api_key input. You must provide a registry API key.");
         return;
     }
     const registryOrgCtid = core.getInput("organization_ctid");
     if (!registryOrgCtid) {
-        core.error("Invalid organization-ctid input. You must provide a CTID of the Registry organization to publish to.");
+        core.error("Invalid organization_ctid input. You must provide a CTID of the Registry organization to publish to.");
         return;
+    }
+    const dryRun = core.getInput("dry_run") === "true";
+    if (dryRun) {
+        core.info("Dry run: will not publish to the Registry.");
     }
     const registryConfig = {
         registryEnv,
         registryBaseUrl,
         registryApiKey,
         registryOrgCtid,
+        dryRun,
     };
     // URLs are comma-separated, so split them into an array
     const urlsArray = urls.split(",");
@@ -21151,16 +21668,15 @@ const run = () => runner_awaiter(void 0, void 0, void 0, function* () {
         core.info("No URLs provided. Exiting.");
         return;
     }
-    core.info(`Starting with ${urlsArray.length} URL${urlsArray.length > 1 ? "s" : ""}: ${urlsArray.join(" ")}`);
-    // Fetch each URL and process the response as JSON. If any URL does not return JSON report an error
+    core.info(`Starting with ${urlsArray.length} URL${urlsArray.length > 1 ? "s" : ""}:`);
+    urlsArray.forEach((url) => {
+        core.info(url);
+    });
+    // Fetch each URL and process the response as JSON. If any URL does not return
+    // JSON report an error
     const documents = {};
-    yield Promise.all(urlsArray.map((url) => runner_awaiter(void 0, void 0, void 0, function* () {
-        // error if the URL does not start with http or https
-        if (!url.match(/^https?:\/\//)) {
-            core.error(`Invalid URL: ${url} does not start with http or https. Check your comma-separated input for any typos.`);
-            return;
-        }
-        const response = yield src(url, {
+    for (const url of urlsArray) {
+        const response = yield httpClient.fetch(url, {
             headers: { Accept: "application/json" },
             redirect: "follow",
         });
@@ -21176,29 +21692,58 @@ const run = () => runner_awaiter(void 0, void 0, void 0, function* () {
                 core.error(`URL ${url} did not return JSON-formatted data. It will be skipped.`);
             }
         }
-    })));
+    }
     const { metadata, urlsForNode } = indexDocuments(documents);
     core.info(JSON.stringify(metadata, null, 2));
     // For documents of supported types found in a graph, publish the document.
-    const results = yield Promise.all(urlsArray.map((url) => runner_awaiter(void 0, void 0, void 0, function* () {
+    for (const url of urlsArray) {
         const documentMetadata = metadata[url];
         const thisDocument = documents[url];
-        if (documentMetadata.isGraph) {
-            const firstEntityType = thisDocument["@graph"][0]["@type"];
-            if (firstEntityType == "ceterms:LearningProgram") {
-                if (metadata[url].ctidsById[thisDocument["@graph"][0]["@id"]] ===
-                    undefined) {
-                    core.error(`${thisDocument["@graph"][0]["@id"]}: Could not publish LearningProgram Graph ${url}, because it does not declare a CTID.`);
-                }
-                else {
-                    yield publishLearningProgram(thisDocument, metadata[url], registryConfig);
-                }
-            }
+        if (!documentMetadata.isGraph) {
+            yield processEntity(thisDocument, registryConfig);
         }
         else {
-            core.info("TODO: implement spidering for certain classes and packaging as a graph for publication");
+            // For each entity in the graph, register it in the entity store
+            for (const entity of thisDocument["@graph"]) {
+                yield processEntity(entity, registryConfig, url);
+            }
         }
-    })));
+    }
+    // Process entities one layer deep
+    const entitiesToProcess = Object.keys(entityStore.entities).filter((entityId) => !entityStore.entities[entityId].processed);
+    for (const entityId of entitiesToProcess) {
+        const entity = entityStore.get(entityId);
+        yield processEntity(entity.entity, registryConfig, entity.sourceUrl);
+    }
+    // marshall entities to publish and order their ids into orderedEntitiesToPublish, sorting them by type with
+    // Organization and subclasses first, then Credential and subclasses, then everything else
+    const orderedEntitiesToPublish = getOrderedEntitiesToPublish(urlsArray);
+    core.info("------------ ENTITIES TO PUBLISH ------------");
+    orderedEntitiesToPublish.forEach((e) => {
+        core.info(`${e} <= ${Object.values(entityStore.sameAsIndex).find((v) => v === e)}`);
+    });
+    // Extract a graph for each document, determine if it has a CTID, and publish
+    // to the appropriate endpoint for the class
+    core.info("------------ BEGINNING PUBLICATION ------------");
+    for (const entityId of orderedEntitiesToPublish) {
+        const currentEntity = entityStore.get(entityId);
+        if (typeof (currentEntity === null || currentEntity === void 0 ? void 0 : currentEntity.entity["ceterms:ctid"]) !== "string") {
+            core.error(`Organization ${entityId} does not have a usable CTID. It will not be published.`);
+        }
+        else {
+            const graphDocument = yield extractGraphForEntity(entityId, registryConfig);
+            if (!graphDocument) {
+                core.info(`No graph document found for ${entityId}. Skipping.`);
+                continue;
+            }
+            const publishResult = yield publishDocument(graphDocument, registryConfig, getClassMetadata(currentEntity.entity["@type"]));
+            if (publishResult !== true) {
+                core.info(`Failed publication detected. Exiting...`);
+                break;
+            }
+        }
+    }
+    core.info("------------ PUBLICATION COMPLETE ------------");
 });
 
 ;// CONCATENATED MODULE: ./src/index.ts

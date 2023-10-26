@@ -88,6 +88,8 @@ describe("Credential", () => {
     );
 
     expect(recognizedByNode).to.not.be(undefined);
+    expect(recognizedByNode.entity["@id"].startsWith("_:")).to.be(true);
+    expect(recognizedByNode.entity["ceterms:sameAs"]).to.be(undefined);
   });
 
   it("should update relationships even in ConditionProfiles", async function () {

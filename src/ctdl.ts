@@ -21,7 +21,7 @@ export const endpoints = {
   "ceterms:AssociateOfAppliedScienceDegree": "/credential/publishGraph",
   "ceterms:AssociateOfArtsDegree": "/credential/publishGraph",
   "ceterms:AssociateOfScienceDegree": "/credential/publishGraph",
-  "ceterms:BachelorsDegree": "/credential/publishGraph",
+  "ceterms:BachelorDegree": "/credential/publishGraph",
   "ceterms:BachelorOfArtsDegree": "/credential/publishGraph",
   "ceterms:BachelorOfScienceDegree": "/credential/publishGraph",
   "ceterms:Badge": "/credential/publishGraph",

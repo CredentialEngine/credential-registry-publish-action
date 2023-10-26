@@ -181,9 +181,6 @@ describe("Learning Program Graph Preparation", () => {
           "ceterms:name": {
             "en-US": "Program Prerequisite Conditions",
           },
-          "ceterms:assertedBy": [
-            "https://credentialengine.github.io/credential-registry-ingest-examples/Organization/1/Organization-1.json",
-          ],
           "ceterms:description": {
             "en-US":
               "Anyone who is a high school graduate or anyone age 18 or older can enroll.",
@@ -205,8 +202,8 @@ describe("Learning Program Graph Preparation", () => {
 
     const doc = await processEntity(testEntity, defaultRegistryConfig);
 
-    // LearningProgram, QACredentialOrganization, and Badge
-    expect(Object.keys(entityStore.entities).length).to.equal(3);
+    // LearningProgram, and Badge
+    expect(Object.keys(entityStore.entities).length).to.equal(2);
 
     expect(doc["ceterms:requires"][0]["@type"]).to.equal(
       "ceterms:ConditionProfile"

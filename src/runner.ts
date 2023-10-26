@@ -15,6 +15,7 @@ import {
   extractGraphForEntity,
   processEntity,
   indexDocuments,
+  getOrderedEntitiesToPublish,
 } from "./graphs";
 import {
   topLevelClassURIs,
@@ -22,6 +23,8 @@ import {
   ClassMetadata,
   classIsDescendantOf,
 } from "./ctdl";
+import { get } from "http";
+import { getPriority } from "os";
 
 export const publishDocument = async (
   graphDocument: any & {
@@ -145,7 +148,6 @@ export const run = async () => {
   const documents: { [key: string]: any } = {};
 
   for (const url of urlsArray) {
-    core.info(`Fetching ${url} ...`);
     const response = await httpClient.fetch(url, {
       headers: { Accept: "application/json" },
       redirect: "follow",
@@ -190,59 +192,16 @@ export const run = async () => {
     await processEntity(entity.entity, registryConfig, entity.sourceUrl);
   }
 
-  // Form an array of entityIds in the entityStore for each entity with a type
-  // in topLevelClassURIs This array should be sorted by class with Organization
-  // and subtypes first, then Credential and subtypes, then LearningOpportunity
-  // and subtypes, then everything else.
-  let entitiesByClass: { [key: string]: string[] } = {};
-  topLevelClassURIs.forEach((classUri) => {
-    entitiesByClass[classUri] = [];
-  });
-  Object.keys(entityStore.entities).forEach((entityId) => {
-    const entity = entityStore.entities[entityId];
-    if (entity.processed) {
-      const entityType = arrayOf(entity.entity["@type"] ?? []);
-      if (entityType.length > 0 && topLevelClassURIs.includes(entityType[0])) {
-        entitiesByClass[entityType[0]].push(entityId);
-      }
-    }
-  });
-
-  const orgSubtypes = topLevelClassURIs.filter((c) =>
-    classIsDescendantOf(c, "ceterms:Organization")
-  );
-  const credentialSubtypes = topLevelClassURIs.filter((c) =>
-    classIsDescendantOf(c, "ceterms:Credential")
-  );
-  const learningOpportunitySubtypes = topLevelClassURIs.filter(
-    (c) =>
-      [
-        "ceterms:LearningOpportunityProfile",
-        "ceterms:LearningOpportunity",
-      ].includes(c) ||
-      classIsDescendantOf(c, "ceterms:LearningOpportunityProfile")
-  );
-
-  // IDs of organization-type entities to publish
-  const orgIds = orgSubtypes.map((c) => entitiesByClass[c]).flat();
-  const credentialIds = credentialSubtypes
-    .map((c) => entitiesByClass[c])
-    .flat();
-  const loppIds = learningOpportunitySubtypes
-    .map((c) => entitiesByClass[c])
-    .flat();
-  const orderedEntitiesToPublish = [...orgIds, ...credentialIds, ...loppIds];
+  // marshall entities to publish and order their ids into orderedEntitiesToPublish, sorting them by type with
+  // Organization and subclasses first, then Credential and subclasses, then everything else
+  const orderedEntitiesToPublish = getOrderedEntitiesToPublish(urlsArray);
 
   core.info("------------ ENTITIES TO PUBLISH ------------");
-  core.info(
-    JSON.stringify(
-      orderedEntitiesToPublish.map(
-        (e) => `${e} <= ${entityStore.sameAsIndex[e]}`
-      ),
-      null,
-      2
-    )
-  );
+  orderedEntitiesToPublish.forEach((e) => {
+    core.info(
+      `${e} <= ${Object.values(entityStore.sameAsIndex).find((v) => v === e)}`
+    );
+  });
 
   // Extract a graph for each document, determine if it has a CTID, and publish
   // to the appropriate endpoint for the class
