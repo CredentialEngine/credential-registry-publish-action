@@ -1,11 +1,11 @@
 name: "Ingest Resources to the Credential Registry"
-description: "Scrape configured URLs for CTDL-formatted JSON-LD data and publish relevant resources to the Credential Registry under the specified API key and organization ID."
+description: "Scrape URLs on your site for CTDL-formatted JSON-LD data and publish the resources to the Credential Registry"
 runs:
   using: "node16"
   main: "dist/index.js"
 inputs:
   urls:
-    description: "The URLs to scrape for CTDL-formatted JSON-LD data."
+    description: "Comma-separated URLs to scrape for CTDL-formatted JSON-LD data."
     required: true
     default: ""
   registry_env:
