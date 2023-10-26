@@ -1,27 +1,36 @@
 # credential-registry-publish-action
 
-A GitHub action that may be used to publish open data published in CTDL format to the Credential Registry by Credential Engine.
+A GitHub action that may be used to push linked open data that an organization
+offers on their own website in CTDL format to the Credential Registry by
+Credential Engine.
 
-## Development Status
+This tool enables organizations to publish a wide variety of open data about
+their credentials, learning opportunities, and more, so that it can be
+accessible both on organizational websites and discoverable in the Credential
+Engine Registry via [CredentialFinder.org](https://credentialfinder.org).
 
-- [ ] Create `/src` with TypeScript source, `/lib` for destination builds, and `/dist` for committed packaged release versions of the action.
-- [ ] Document expected node version `18` (current LTS version) in `.nvmrc` and Action configuration.
-- [ ] Use Vercel's `ncc` tool (with `--licenses` flag) to package up dependency modules into a single file for distribution.
-- [ ] Add `.prettierrc.json` etc. for code formatting.
-- [x] Tune `.gitignore`
-- [x] Create `/.action.yml` for GitHub Action metadata.
-- [ ] Document inputs and environment secrets & variables for the action
-- [ ] Implementer can configure one or more URLs to be processed.
-- [ ] Implementer can configure an API key to be used for publishing.
-- [ ] Implementer can configure a default organization to be used for publishing.
-- [ ] Can import a Credential from a URL.
-- [ ] Can import a LearningProgram from a URL.
-- [ ] Set up tests to be run with test command for ensuring continued function of the action across pull requests and other future maintenance.
-- [ ] Move repo to CE Organization
-- [ ] Publish action to GitHub Marketplace
+**This tool is intended for developers or other technical staff**, probably by
+those implementing the open data publishing strategy. Other methods of
+publishing data to the Registry are available for non-developers, including
+input forms and CSV uploads on the [Credential Engine
+website](https://apps.credentialengine.org/publisher).
 
-## Documentation and notes
+## Get assistance and report problems
 
-This repository contains one GitHub Action using a NodeJS runtime. It roughly follows documentation at [GitHub](https://docs.github.com/en/actions/creating-actions/creating-a-javascript-action) except that it uses a TypeScript source.
+Reach out to Credential Engine staff via
+[email](mailto:info@credentialengine.org?subject=Credential%20Registry%20Publish%20Action)
+if you need help using the tool. To report issues, you can use email or file
+them on GitHub at the
+[credential-registry-publish-action](https://github.com/credentialengine/credential-registry-publish-action/issues)
+repository. This software is open source and open for contributions and
+improvements.
 
-Some [documentation on using the Actions Toolkit in Typescript](https://github.com/actions/typescript-action), covering how to use test mocks.
+### Developer Notes
+
+This repository contains one GitHub Action using a NodeJS runtime. It roughly
+follows the approach at [Creating a JavaScript
+Action](https://docs.github.com/en/actions/creating-actions/creating-a-javascript-action)
+except that it uses a TypeScript source, compiled to JavaScript with `ncc`.
+Contributors, see some [additional documentation on using the Actions Toolkit in
+Typescript](https://github.com/actions/typescript-action), covering how to use
+test mocks.
