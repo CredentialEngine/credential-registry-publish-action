@@ -1,5 +1,8 @@
 name: "Ingest Resources to the Credential Registry"
 description: "Scrape URLs on your site for CTDL-formatted JSON-LD data and publish the resources to the Credential Registry"
+branding:
+  color: "green"
+  icon: "link"
 runs:
   using: "node16"
   main: "dist/index.js"
