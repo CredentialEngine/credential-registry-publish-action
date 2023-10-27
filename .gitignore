@@ -18,5 +18,9 @@ node_modules/
 # dotenv environment variable files
 .env
 
+# schema files for build
+src/*-schema.json
+src/*-schema.ts
+
 # Built artifacts temporarily ignored until substantially ready
 dist/

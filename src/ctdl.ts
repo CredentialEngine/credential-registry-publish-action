@@ -4,9 +4,9 @@
 // instances of primary classes should be included in the graph. Such other instances should be referenced
 // by ID as a string and published as their own graph.
 
-import * as fs from "fs";
-import { arrayOf } from "./utils";
-
+import { schema as CtdlSchema } from "./ctdl-schema";
+import { schema as CtdlAsnSchema } from "./ctdlasn-schema";
+import { schema as QDataSchema } from "./qdata-schema";
 export const endpoints = {
   // Organization and subtypes
   "ceterms:CredentialOrganization": "/organization/publishGraph",
@@ -72,7 +72,7 @@ const appendURIs = (destination, source) => {
 //Append terms to schemaData.merged
 const appendTerms = (destination, source) => {
   //For each term in the source...
-  source["@graph"].forEach((term) => {
+  source.forEach((term) => {
     //Find a match in schemaData.merged
     var match = destination.find(
       (otherTerm) => otherTerm["@id"] == term["@id"]
@@ -91,40 +91,6 @@ const appendTerms = (destination, source) => {
   });
 };
 
-const CtdlSchema = JSON.parse(
-  fs.readFileSync("./src/ctdl-schema.json", "utf8")
-);
-const CtdlAsnSchema = JSON.parse(
-  fs.readFileSync("./src/ctdlasn-schema.json", "utf8")
-);
-const QDataSchema = JSON.parse(
-  fs.readFileSync("./src/qdata-schema.json", "utf8")
-);
-
-//Hold all schema data
-let schemaData: { [key: string]: any[] } = {
-  ctdl: CtdlSchema,
-  ctdlasn: CtdlAsnSchema,
-  qdata: QDataSchema,
-  merged: [],
-};
-//
-
-appendTerms(schemaData.merged, schemaData.ctdl);
-appendTerms(schemaData.merged, schemaData.ctdlasn);
-appendTerms(schemaData.merged, schemaData.qdata);
-
-//For each top-level class (ie class with a CTID), render the class and the properties for that class which point to a top-level class
-//Get the CTID property and top-level classes
-const ctidProperty =
-  schemaData.merged.find((item) => item["@id"] == "ceterms:ctid") ?? {};
-const topLevelClasses = schemaData.merged.filter((item) =>
-  ctidProperty["schema:domainIncludes"].includes(item["@id"])
-);
-export const topLevelClassURIs: string[] = topLevelClasses.map(
-  (item) => item["@id"]
-);
-
 export const getMaybePointerPropertiesForClass = (
   className: string
 ): string[] => {
@@ -139,7 +105,7 @@ export const getMaybePointerPropertiesForClass = (
 };
 
 export const getClassMetadata = (className: string): ClassMetadata => {
-  const classInfo = CtdlSchema["@graph"].find(
+  const classInfo = schemaData.ctdl.find(
     (entity) => entity["@id"] === className
   );
   const subClassOf = classInfo?.["rdfs:subClassOf"]
@@ -154,18 +120,6 @@ export const getClassMetadata = (className: string): ClassMetadata => {
     ...(publishEndpoint && { publishEndpoint }),
   };
 };
-
-const classMetadata: { [key: string]: ClassMetadata } =
-  schemaData.merged.reduce((acc, item, ind, arr) => {
-    const thisMeta =
-      item["@type"] === "rdfs:Class"
-        ? getClassMetadata(item["@id"])
-        : undefined;
-    return {
-      ...acc,
-      ...(thisMeta ? { [item["@id"]]: thisMeta } : {}),
-    };
-  });
 
 export const getPropertiesForClass = (className: string): string[] => {
   const properties = schemaData.merged.filter(
@@ -220,3 +174,35 @@ export const classIsDescendantOf = (c: string, ancestor: string) => {
   if (parent === ancestor) return true;
   return classIsDescendantOf(parent, ancestor);
 };
+
+//Hold all schema data
+let schemaData = {
+  ctdl: CtdlSchema,
+  ctdlasn: CtdlAsnSchema,
+  qdata: QDataSchema,
+  merged: [],
+};
+
+// Process Schemas
+appendTerms(schemaData.merged, schemaData.ctdl);
+appendTerms(schemaData.merged, schemaData.ctdlasn);
+appendTerms(schemaData.merged, schemaData.qdata);
+
+//For each top-level class (ie class with a CTID), render the class and the properties for that class which point to a top-level class
+//Get the CTID property and top-level classes
+const ctidProperty =
+  schemaData.merged.find((item) => item["@id"] == "ceterms:ctid") ?? {};
+
+export const topLevelClasses = schemaData.merged.filter((item) =>
+  ctidProperty["schema:domainIncludes"].includes(item["@id"])
+);
+export const topLevelClassURIs = topLevelClasses.map((item) => item["@id"]);
+
+export const classMetadata = schemaData.merged.reduce((acc, item, ind, arr) => {
+  const thisMeta =
+    item["@type"] === "rdfs:Class" ? getClassMetadata(item["@id"]) : undefined;
+  return {
+    ...acc,
+    ...(thisMeta ? { [item["@id"]]: thisMeta } : {}),
+  };
+});

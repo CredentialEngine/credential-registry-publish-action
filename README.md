@@ -25,7 +25,11 @@ them on GitHub at the
 repository. This software is open source and open for contributions and
 improvements.
 
-### Developer Notes
+### Developer and Contributor Notes
+
+Contributions to this effort are welcome via pull request on GitHub. Please file
+issues and coordinate with the Credential Engine team via email or GitHub issues
+if you have questions.
 
 This repository contains one GitHub Action using a NodeJS runtime. It roughly
 follows the approach at [Creating a JavaScript
@@ -34,3 +38,13 @@ except that it uses a TypeScript source, compiled to JavaScript with `ncc`.
 Contributors, see some [additional documentation on using the Actions Toolkit in
 Typescript](https://github.com/actions/typescript-action), covering how to use
 test mocks.
+
+A compiled version of the action is committed to the repository, so that it can
+be used by GitHub actions. You can run the code locally with `npm run local`
+with input variables set in a `.env` file. See the `.env.example` file for the
+variables that are required, matching the inputs of the GitHub Action.
+
+The library dynamically loads CTDL schema data from the Credential Engine
+website on `postinstall`. If you need to regenerate the downloaded schema to
+account for occasional updates, run `npm run buildSchema`. Run `npm run build`
+to generate the compiled artifact before submitting your pull request.

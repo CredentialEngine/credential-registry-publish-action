@@ -5,9 +5,11 @@
   "main": "dist/index.js",
   "scripts": {
     "test": "NODE_ENV=test ./node_modules/mocha/bin/_mocha -r ts-node/register --timeout 999999 --colors ./test/**/*.test.ts",
+    "buildSchema": "ts-node src/buildSchema.ts",
     "build": "npx ncc build src/index.ts -o dist --license licenses.txt",
     "local": "ts-node src/local.ts"
   },
+  "postinstall": "npm run buildSchema",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ottonomy/credential-registry-publish-action.git"
