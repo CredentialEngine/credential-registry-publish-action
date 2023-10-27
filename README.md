@@ -4,11 +4,10 @@ A GitHub action that may be used to push linked open data that an organization
 offers on their own website in CTDL format to the Credential Registry by
 Credential Engine.
 
-\*\*[Documentation and
-Examples](https://credentialengine.github.io/credential-registry-ingest-examples/)
-
-- Get detailed information about how to publish your CTDL-formatted linked open
-  data and how to configure this action to publish your data to the Registry.\*\*
+**[Documentation and
+Examples](https://credentialengine.github.io/credential-registry-ingest-examples/):
+Get detailed information about how to publish your CTDL-formatted linked open
+data and how to configure this action to publish your data to the Registry.**
 
 This tool enables organizations to publish a wide variety of open data about
 their credentials, learning opportunities, and more, so that it can be
